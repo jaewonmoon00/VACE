@@ -24,8 +24,12 @@ from annotators.utils import get_annotator
 
 EXAMPLE_PROMPT = {
     "vace-1.3B": {
-        "src_ref_images": './bag.jpg,./heben.png',
-        "prompt": "优雅的女士在精品店仔细挑选包包，她身穿一袭黑色修身连衣裙，搭配珍珠项链，展现出成熟女性的魅力。手中拿着一款复古风格的棕色皮质半月形手提包，正细致地观察其工艺与质地。店内灯光柔和，木质装潢营造出温馨而高级的氛围。中景，侧拍捕捉女士挑选瞬间，展现其品味与气质。"
+        "src_ref_images": 'assets/images/girl.png,assets/images/snake.png',
+        "prompt": "在一个欢乐而充满节日气氛的场景中，穿着鲜艳红色春服的小女孩正与她的可爱卡通蛇嬉戏。她的春服上绣着金色吉祥图案，散发着喜庆的气息，脸上洋溢着灿烂的笑容。蛇身呈现出亮眼的绿色，形状圆润，宽大的眼睛让它显得既友善又幽默。小女孩欢快地用手轻轻抚摸着蛇的头部，共同享受着这温馨的时刻。周围五彩斑斓的灯笼和彩带装饰着环境，阳光透过洒在她们身上，营造出一个充满友爱与幸福的新年氛围。"
+    },
+    "vace-14B": {
+        "src_ref_images": 'assets/images/girl.png,assets/images/snake.png',
+        "prompt": "在一个欢乐而充满节日气氛的场景中，穿着鲜艳红色春服的小女孩正与她的可爱卡通蛇嬉戏。她的春服上绣着金色吉祥图案，散发着喜庆的气息，脸上洋溢着灿烂的笑容。蛇身呈现出亮眼的绿色，形状圆润，宽大的眼睛让它显得既友善又幽默。小女孩欢快地用手轻轻抚摸着蛇的头部，共同享受着这温馨的时刻。周围五彩斑斓的灯笼和彩带装饰着环境，阳光透过洒在她们身上，营造出一个充满友爱与幸福的新年氛围。"
     }
 }
 
@@ -38,10 +42,10 @@ def validate_args(args):
 
     # The default sampling steps are 40 for image-to-video tasks and 50 for text-to-video tasks.
     if args.sample_steps is None:
-        args.sample_steps = 25
+        args.sample_steps = 50
 
     if args.sample_shift is None:
-        args.sample_shift = 8.0
+        args.sample_shift = 16
 
     # The default number of frames are 1 for text-to-image tasks and 81 for other tasks.
     if args.frame_num is None:
@@ -62,13 +66,13 @@ def get_parser():
     parser.add_argument(
         "--model_name",
         type=str,
-        default="vace-1.3B",
+        default="vace-14B",
         choices=list(WAN_CONFIGS.keys()),
         help="The model name to run.")
     parser.add_argument(
         "--size",
         type=str,
-        default="480*832",
+        default="720p",
         choices=list(SIZE_CONFIGS.keys()),
         help="The area (width*height) of the generated video. For the I2V task, the aspect ratio of the output video will follow that of the input image."
     )
@@ -81,7 +85,7 @@ def get_parser():
     parser.add_argument(
         "--ckpt_dir",
         type=str,
-        default='models/VACE-Wan2.1-1.3B-Preview',
+        default='models/Wan2.1-VACE-14B/',
         help="The path to the checkpoint directory.")
     parser.add_argument(
         "--offload_model",
@@ -116,6 +120,11 @@ def get_parser():
         help="Whether to use FSDP for DiT.")
     parser.add_argument(
         "--save_dir",
+        type=str,
+        default=None,
+        help="The file to save the generated image or video to.")
+    parser.add_argument(
+        "--save_file",
         type=str,
         default=None,
         help="The file to save the generated image or video to.")
@@ -434,7 +443,11 @@ def main(args):
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
 
-        save_file = os.path.join(save_dir, 'out_video.mp4')
+        if args.save_file is not None:
+            save_file = args.save_file
+        else:
+            save_file = os.path.join(save_dir, 'out_video.mp4')
+
         cache_video(
             tensor=video[None],
             save_file=save_file,
