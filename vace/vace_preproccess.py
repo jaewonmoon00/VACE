@@ -108,7 +108,7 @@ def get_parser():
     parser.add_argument(
         "--save_fps",
         type=int,
-        default=16,
+        default=24,
         help="The fps to save the processed data.")
     return parser
 

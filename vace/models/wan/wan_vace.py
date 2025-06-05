@@ -204,6 +204,7 @@ class WanVace(WanT2V):
         image_size = (image_size[1], image_size[0])
         image_sizes = []
         for i, (sub_src_video, sub_src_mask) in enumerate(zip(src_video, src_mask)):
+            print(f"Loading video {i}: {sub_src_video}")
             if sub_src_mask is not None and sub_src_video is not None:
                 src_video[i], src_mask[i], _, _, _ = self.vid_proc.load_video_pair(sub_src_video, sub_src_mask)
                 src_video[i] = src_video[i].to(device)
