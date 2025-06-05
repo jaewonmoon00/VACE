@@ -24,16 +24,10 @@ from annotators.utils import get_annotator
 
 EXAMPLE_PROMPT = {
     "vace-1.3B": {
-        "src_ref_images": 'assets/images/girl.png,assets/images/snake.png',
-        "prompt": "在一个欢乐而充满节日气氛的场景中，穿着鲜艳红色春服的小女孩正与她的可爱卡通蛇嬉戏。她的春服上绣着金色吉祥图案，散发着喜庆的气息，脸上洋溢着灿烂的笑容。蛇身呈现出亮眼的绿色，形状圆润，宽大的眼睛让它显得既友善又幽默。小女孩欢快地用手轻轻抚摸着蛇的头部，共同享受着这温馨的时刻。周围五彩斑斓的灯笼和彩带装饰着环境，阳光透过洒在她们身上，营造出一个充满友爱与幸福的新年氛围。"
-    },
-    "vace-14B": {
-        "src_ref_images": 'assets/images/girl.png,assets/images/snake.png',
-        "prompt": "在一个欢乐而充满节日气氛的场景中，穿着鲜艳红色春服的小女孩正与她的可爱卡通蛇嬉戏。她的春服上绣着金色吉祥图案，散发着喜庆的气息，脸上洋溢着灿烂的笑容。蛇身呈现出亮眼的绿色，形状圆润，宽大的眼睛让它显得既友善又幽默。小女孩欢快地用手轻轻抚摸着蛇的头部，共同享受着这温馨的时刻。周围五彩斑斓的灯笼和彩带装饰着环境，阳光透过洒在她们身上，营造出一个充满友爱与幸福的新年氛围。"
+        "src_ref_images": './bag.jpg,./heben.png',
+        "prompt": "优雅的女士在精品店仔细挑选包包，她身穿一袭黑色修身连衣裙，搭配珍珠项链，展现出成熟女性的魅力。手中拿着一款复古风格的棕色皮质半月形手提包，正细致地观察其工艺与质地。店内灯光柔和，木质装潢营造出温馨而高级的氛围。中景，侧拍捕捉女士挑选瞬间，展现其品味与气质。"
     }
 }
-
-
 
 
 def validate_args(args):
@@ -44,10 +38,10 @@ def validate_args(args):
 
     # The default sampling steps are 40 for image-to-video tasks and 50 for text-to-video tasks.
     if args.sample_steps is None:
-        args.sample_steps = 50
+        args.sample_steps = 25
 
     if args.sample_shift is None:
-        args.sample_shift = 16
+        args.sample_shift = 8.0
 
     # The default number of frames are 1 for text-to-image tasks and 81 for other tasks.
     if args.frame_num is None:
@@ -68,15 +62,13 @@ def get_parser():
     parser.add_argument(
         "--model_name",
         type=str,
-        # default="vace-1.3B",
-        default="vace-14B",
+        default="vace-1.3B",
         choices=list(WAN_CONFIGS.keys()),
         help="The model name to run.")
     parser.add_argument(
         "--size",
         type=str,
-        # default="480p",
-        default="720p",
+        default="480*832",
         choices=list(SIZE_CONFIGS.keys()),
         help="The area (width*height) of the generated video. For the I2V task, the aspect ratio of the output video will follow that of the input image."
     )
@@ -89,8 +81,7 @@ def get_parser():
     parser.add_argument(
         "--ckpt_dir",
         type=str,
-        # default='models/Wan2.1-VACE-1.3B/',
-        default='models/Wan2.1-VACE-14B/',
+        default='models/VACE-Wan2.1-1.3B-Preview',
         help="The path to the checkpoint directory.")
     parser.add_argument(
         "--offload_model",
@@ -125,11 +116,6 @@ def get_parser():
         help="Whether to use FSDP for DiT.")
     parser.add_argument(
         "--save_dir",
-        type=str,
-        default=None,
-        help="The file to save the generated image or video to.")
-    parser.add_argument(
-        "--save_file",
         type=str,
         default=None,
         help="The file to save the generated image or video to.")
@@ -179,7 +165,7 @@ def get_parser():
     parser.add_argument(
         "--sample_guide_scale",
         type=float,
-        default=5.0,
+        default=6.0,
         help="Classifier free guidance scale.")
     return parser
 
@@ -289,7 +275,125 @@ def main(args):
                                                                   [args.src_mask],
                                                                   [None if args.src_ref_images is None else args.src_ref_images.split(',')],
                                                                   args.frame_num, SIZE_CONFIGS[args.size], device)
+# 이 부분 추가함
+    # import cv2
 
+    # prev_video_path = "/data/VACE/results/vace_wan_1.3b/2025-05-08-07-26-08/out_video.mp4"
+    # cap = cv2.VideoCapture(prev_video_path)
+
+    # if not cap.isOpened():
+    #     logging.error(f"영상 열기에 실패했습니다: {prev_video_path}")
+    # else:
+    #     logging.info(f"영상 열기 성공: {prev_video_path}")
+
+    #     # 총 프레임 수 확인
+    #     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    #     logging.info(f"총 프레임 수: {total_frames}")
+
+    #     if total_frames > 0:
+    #         # 마지막 프레임으로 이동
+    #         cap.set(cv2.CAP_PROP_POS_FRAMES, total_frames - 1)
+    #         ret, last_frame = cap.read()
+
+    #         if ret:
+    #             logging.info("마지막 프레임 추출 성공!")
+
+    #             # BGR -> RGB 변환 후 텐서로 변환
+    #             last_frame = cv2.cvtColor(last_frame, cv2.COLOR_BGR2RGB)
+    #             last_frame_tensor = torch.from_numpy(last_frame).float() / 255.0
+    #             last_frame_tensor = last_frame_tensor.permute(2, 0, 1)  # HWC -> CHW
+    #             last_frame_tensor = last_frame_tensor.mul_(2).sub_(1)  # [0,1] -> [-1,1]
+
+    #             # 시간 차원 추가하여 (C, 1, H, W) 형태로 만들기
+    #             last_frame_tensor = last_frame_tensor.unsqueeze(1).to(device)
+
+    #             # 첫 프레임 교체
+    #             src_video[0] = torch.cat([last_frame_tensor, src_video[0][:, 1:]], dim=1)
+    #             logging.info(f"첫 프레임 교체 완료. 영상 크기: {src_video[0].shape}")
+    #         else:
+    #             logging.error("마지막 프레임 읽기 실패")
+    #     else:
+    #         logging.error("영상의 프레임 수가 0입니다.")
+
+    # # 자원 해제
+    # cap.release()
+
+    import cv2
+
+    prev_video_path = "/data/VACE/results/vace_wan_1.3b/2025-05-08-07-26-08/out_video.mp4"
+    cap = cv2.VideoCapture(prev_video_path)
+
+    if not cap.isOpened():
+        logging.error(f"영상 열기에 실패했습니다: {prev_video_path}")
+    else:
+        logging.info(f"영상 열기 성공: {prev_video_path}")
+
+        # 총 프레임 수 확인
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        logging.info(f"총 프레임 수: {total_frames}")
+
+        if total_frames > 0:
+            # 1. 원본 영상 프레임 수 확인 및 저장
+            src_frames = src_video[0].shape[1]  # 원본 프레임 수
+            front_frames = 41  # 앞으로 밀 프레임 수
+            insert_frames = 40  # 삽입할 이전 영상의 프레임 수
+            
+            logging.info(f"원본 영상 프레임 수: {src_frames}, 앞으로 밀 프레임: {front_frames}, 삽입할 프레임: {insert_frames}")
+            
+            # 2. 원본 영상의 앞부분 저장
+            original_front = src_video[0][:, :front_frames].clone()
+            logging.info(f"저장된 원본 앞부분 크기: {original_front.shape}")
+            
+            # 3. 이전 영상의 뒷부분 프레임 추출
+            frames_to_extract = min(insert_frames, total_frames)  # 추출할 프레임 수
+            extracted_frames = []
+            
+            # 마지막 N개 프레임 추출
+            for i in range(frames_to_extract):
+                frame_idx = total_frames - frames_to_extract + i
+                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+                ret, frame = cap.read()
+                
+                if ret:
+                    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    frame_tensor = torch.from_numpy(frame).float() / 255.0
+                    frame_tensor = frame_tensor.permute(2, 0, 1)  # HWC -> CHW
+                    frame_tensor = frame_tensor.mul_(2).sub_(1)  # [0,1] -> [-1,1]
+                    extracted_frames.append(frame_tensor)
+                else:
+                    logging.error(f"프레임 {frame_idx} 읽기 실패")
+            
+            if extracted_frames:
+                # 추출한 프레임들을 하나의 텐서로 결합
+                extracted_tensor = torch.stack(extracted_frames, dim=1).to(device)
+                logging.info(f"이전 영상 추출 프레임 텐서 크기: {extracted_tensor.shape}")
+                
+                # 4. 새 영상 조합: 이전 영상의 뒷부분 + 원본 영상의 앞부분
+                new_video = torch.cat([
+                    extracted_tensor,         # 이전 영상의 뒷부분 (40프레임)
+                    original_front            # 원본 영상의 앞부분 (41프레임)
+                ], dim=1)
+                
+                # 필요시 길이 조정 (프레임 수 맞추기)
+                if new_video.shape[1] != src_frames:
+                    if new_video.shape[1] > src_frames:
+                        new_video = new_video[:, :src_frames]  # 길이 줄이기
+                    else:
+                        # 길이 늘리기 (필요한 경우)
+                        padding = src_frames - new_video.shape[1]
+                        padding_frames = src_video[0][:, -padding:].clone()
+                        new_video = torch.cat([new_video, padding_frames], dim=1)
+                
+                # 5. 최종 적용
+                src_video[0] = new_video
+                logging.info(f"영상 재구성 완료. 최종 영상 크기: {src_video[0].shape}")
+            else:
+                logging.error("이전 영상에서 추출된 프레임이 없습니다.")
+        else:
+            logging.error("영상의 프레임 수가 0입니다.")
+
+    # 자원 해제
+    cap.release()
     logging.info(f"Generating video...")
     video = wan_vace.generate(
         args.prompt,
@@ -308,16 +412,29 @@ def main(args):
     ret_data = {}
     if rank == 0:
         if args.save_dir is None:
-            save_dir = os.path.join('results', args.model_name, time.strftime('%Y-%m-%d-%H-%M-%S', time.localtime(time.time())))
+            # 입력 파일명에서 디렉토리명 생성
+            input_name = ""
+            if args.src_video:
+                input_name = os.path.splitext(os.path.basename(args.src_video))[0]
+            elif args.src_ref_images:
+                # 첫 번째 참조 이미지의 파일명 사용
+                first_ref = args.src_ref_images.split(',')[0]
+                input_name = os.path.splitext(os.path.basename(first_ref))[0]
+            else:
+                # 프롬프트의 일부를 사용 (특수문자 제거)
+                import re
+                prompt_part = re.sub(r'[^\w\s-]', '', args.prompt[:30])
+                prompt_part = re.sub(r'[-\s]+', '_', prompt_part)
+                input_name = prompt_part if prompt_part else "text_prompt"
+            
+            timestamp = time.strftime('%Y-%m-%d-%H-%M-%S', time.localtime(time.time()))
+            save_dir = os.path.join('results', args.model_name, f"{input_name}_{timestamp}")
         else:
             save_dir = args.save_dir
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
 
-        if args.save_file is not None:
-            save_file = args.save_file
-        else:
-            save_file = os.path.join(save_dir, 'out_video.mp4')
+        save_file = os.path.join(save_dir, 'out_video.mp4')
         cache_video(
             tensor=video[None],
             save_file=save_file,

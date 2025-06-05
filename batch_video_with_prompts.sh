@@ -5,7 +5,7 @@ INPUT_FOLDER="/data/VACE/inputs/"
 # 파일-프롬프트 쌍이 저장된 파일 (파이프 구분자 사용)
 PROMPT_FILE="/data/VACE/video_prompts.txt"
 # 사용할 시드값
-BASE_SEED=21345
+BASE_SEED=613
 
 echo "폴더 내 영상 처리 시작: $INPUT_FOLDER"
 echo "프롬프트 파일: $PROMPT_FILE"

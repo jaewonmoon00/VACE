@@ -1,1 +1,9 @@
-video_00000634_chunk1.mov|dark lecture hall
+video_00000634_chunk1.mov|
+video_00001044_chunk1.mov|
+video_00001096_chunk1.mov|
+video_00001458_chunk1.mov|It gets dark and then light and you can see the whole city at night. no text, no logo
+video_00000169_chunk1.mov|City seen from the sky
+video_00001666_chunk1.mov|street
+video_00001908_chunk1.mov|space
+video_00001968_chunk1.mov|space
+video_00001972_chunk1.mov|space
