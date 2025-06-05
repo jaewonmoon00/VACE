@@ -17,7 +17,8 @@ vace.egg-info
 .readthedocs.yml
 *resources
 *.ipynb_checkpoints*
-*.vscodebenchmarks/VACE-Benchmark/
+*.vscode
+benchmarks/VACE-Benchmark/
 models/VACE-Annotators/
 models/VACE-LTX-Video-0.9/  
 models/Wan2.1-VACE-14B/

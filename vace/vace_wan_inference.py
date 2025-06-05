@@ -68,13 +68,15 @@ def get_parser():
     parser.add_argument(
         "--model_name",
         type=str,
-        default="vace-1.3B",
+        # default="vace-1.3B",
+        default="vace-14B",
         choices=list(WAN_CONFIGS.keys()),
         help="The model name to run.")
     parser.add_argument(
         "--size",
         type=str,
-        default="480p",
+        # default="480p",
+        default="720p",
         choices=list(SIZE_CONFIGS.keys()),
         help="The area (width*height) of the generated video. For the I2V task, the aspect ratio of the output video will follow that of the input image."
     )
@@ -87,7 +89,8 @@ def get_parser():
     parser.add_argument(
         "--ckpt_dir",
         type=str,
-        default='models/Wan2.1-VACE-1.3B/',
+        # default='models/Wan2.1-VACE-1.3B/',
+        default='models/Wan2.1-VACE-14B/',
         help="The path to the checkpoint directory.")
     parser.add_argument(
         "--offload_model",
