@@ -138,18 +138,8 @@ done
 - [ ] **프레임 일관성 검증**: 원본과 결과물 프레임 수 비교 도구
 
 ### 중간 우선순위  
-- [ ] **문서화 완성**: 파이프라인 전체 과정 상세 설명
 - [ ] **UI 개선**: 기존 UI를 현재 워크플로우에 맞게 수정
 - [ ] **모델 최적화**: CLIP 모델 캐싱 및 메모리 최적화
 
 ### 낮은 우선순위
 - [ ] **결과물 디렉토리명 개선**: 시간 기반 → 파일명 기반
-- [ ] **Wan 14B quantization**: Single A100에서 실행 가능성 검토
-
-## 🤝 기여하기
-
-1. 이 repository를 fork
-2. feature 브랜치 생성 (`git checkout -b feature/amazing-feature`)
-3. 변경사항 커밋 (`git commit -m 'Add amazing feature'`)
-4. 브랜치에 push (`git push origin feature/amazing-feature`)
-5. Pull Request 생성
