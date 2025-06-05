@@ -175,7 +175,7 @@ class VACEInference:
                     interactive=True)
                 self.frame_rate = gr.Textbox(
                     label='frame_rate',
-                    value=16,
+                    value=24,#16
                     interactive=True)
                 self.num_frames = gr.Textbox(
                     label='num_frames',
@@ -260,13 +260,13 @@ if __name__ == '__main__':
     parser.add_argument('--root_path', dest='root_path', help='', default=None)
     parser.add_argument('--save_dir', dest='save_dir', help='', default='cache')
     parser.add_argument("--mp", action="store_true", help="Use Multi-GPUs",)
-    parser.add_argument("--model_name", type=str, default="vace-1.3B", choices=list(WAN_CONFIGS.keys()), help="The model name to run.")
+    parser.add_argument("--model_name", type=str, default="vace-14B", choices=list(WAN_CONFIGS.keys()), help="The model name to run.")
     parser.add_argument("--ulysses_size", type=int, default=1, help="The size of the ulysses parallelism in DiT.")
     parser.add_argument("--ring_size", type=int, default=1, help="The size of the ring attention parallelism in DiT.")
     parser.add_argument(
         "--ckpt_dir",
         type=str,
-        default='models/Wan2.1-VACE-1.3B',
+        default='models/Wan2.1-VACE-14B',
         help="The path to the checkpoint directory.",
     )
     parser.add_argument(
@@ -289,4 +289,5 @@ if __name__ == '__main__':
                                                 server_port=args.server_port,
                                                 root_path=args.root_path,
                                                 allowed_paths=allowed_paths,
-                                                show_error=True, debug=True)
+                                                show_error=True, debug=True,
+                                                share=True)
