@@ -4,7 +4,7 @@
 INPUT_FOLDER="/data/VACE/inputs/"
 
 # 사용할 시드값 (모든 영상에 동일하게 적용하거나, 파일마다 다르게 하려면 수정)
-#BASE_SEED=2025
+BASE_SEED=2025
 
 # 지원하는 영상 확장자 패턴
 VIDEO_EXTENSIONS="*.mp4 *.avi *.mov *.mkv *.wmv *.flv *.webm"
