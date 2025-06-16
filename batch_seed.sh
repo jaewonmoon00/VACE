@@ -1,10 +1,10 @@
 #!/bin/bash
 
 # 실행 횟수 설정 (원하는 만큼 수정)
-RUN_COUNT=10
+RUN_COUNT=1
 
 # 비디오 경로
-VIDEO_PATH="/data/VACE/inputs/video_00002806_chunk1.mov"
+VIDEO_PATH="/data/VACE/inputs/video_00002043_chunk1.mov"
 
 echo "랜덤 시드로 $RUN_COUNT 번 실행 시작"
 echo "처리할 영상: $(basename "$VIDEO_PATH")"

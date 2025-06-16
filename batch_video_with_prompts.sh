@@ -4,12 +4,9 @@
 INPUT_FOLDER="/data/VACE/inputs/"
 # 파일-프롬프트 쌍이 저장된 파일 (파이프 구분자 사용)
 PROMPT_FILE="/data/VACE/video_prompts.txt"
-# 사용할 시드값
-BASE_SEED=3847
 
 echo "폴더 내 영상 처리 시작: $INPUT_FOLDER"
 echo "프롬프트 파일: $PROMPT_FILE"
-echo "사용할 시드: $BASE_SEED"
 echo "=========================="
 
 # 처리된 파일 카운터
@@ -40,10 +37,7 @@ while IFS='|' read -r filename prompt; do
         echo "처리 중: $filename"
         echo "프롬프트: $prompt"
         
-        # 파일마다 다른 시드를 사용하려면 아래 라인 사용
-        current_seed=$((BASE_SEED + processed_count))
-        # current_seed=$BASE_SEED  # 동일한 시드 사용시
-        
+        current_seed=$RANDOM
         # VACE 파이프라인 실행
         torchrun --nproc-per-node=2 vace/vace_pipeline.py --base wan --task outpainting --direction 'left,right' --expand_ratio 1.6 --video "$video_file" --prompt "$prompt" --base_seed $current_seed --dit_fsdp --t5_fsdp --ulysses_size 2 --ring_size 1
         

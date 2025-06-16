@@ -112,6 +112,10 @@ class WanVace(WanT2V):
             self.model = shard_fn(self.model)
         else:
             self.model.to(self.device)
+        ## TODO: torch.compile
+        print("#############################\ncompile model\n#############################")
+        # self.model = torch.compile(self.model,dynamic=False)
+        print("#############################\ncompile finished\n#############################")
 
         self.sample_neg_prompt = config.sample_neg_prompt
 
