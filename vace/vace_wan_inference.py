@@ -195,6 +195,7 @@ def get_parser():
         type=str,
         default=None,
         help="The prompt to generate the image or video from.")
+    
     parser.add_argument(
         "--use_prompt_extend",
         default='plain',
@@ -329,6 +330,27 @@ def main(args):
     ### Cha's edit
     # wan_vace = torch.compile(wan_vace, mode='default', fullgraph=True)
     ###
+
+    actual_fps = cfg.sample_fps  # Default FPS
+    if args.src_video and os.path.exists(args.src_video):
+        import cv2
+        cap = cv2.VideoCapture(args.src_video)
+        if cap.isOpened():
+            input_fps = cap.get(cv2.CAP_PROP_FPS)
+            if input_fps > 0:
+                actual_fps = input_fps
+                logging.info(f"Using input video FPS: {actual_fps}")
+            else:
+                logging.warning(f"Could not get FPS from input video, using default: {actual_fps}")
+            cap.release()
+        else:
+            logging.warning(f"Could not open input video, using default FPS: {actual_fps}")
+    
+    # Update the video processor with actual FPS
+    wan_vace.vid_proc.min_fps = actual_fps
+    wan_vace.vid_proc.max_fps = actual_fps
+    logging.info(f"Video processor FPS set to: {actual_fps}")
+
     src_video, src_mask, src_ref_images = wan_vace.prepare_source([args.src_video],
                                                                   [args.src_mask],
                                                                   [None if args.src_ref_images is None else args.src_ref_images.split(',')],
@@ -412,144 +434,144 @@ def main(args):
     # cap.release()
     # 기존 주석처리된 부분을 다음과 같이 수정
 
-    # TODO: 영상을 확장했는데 초반은 마음에 드는데 후반부가 마음에 안들 때 해당 영상의 앞부분을 가이드로 줘서 재생성할 때 쓰임
-    import cv2
+    # # TODO: 영상을 확장했는데 초반은 마음에 드는데 후반부가 마음에 안들 때 해당 영상의 앞부분을 가이드로 줘서 재생성할 때 쓰임
+    # import cv2
 
-    # 1. 이전 결과 영상 경로 업데이트
-    prev_video_path = "/data/VACE/results/61_s.mp4" #"/data/VACE/results/vace-14B/2025-05-26-19-21-56/out_video.mp4"
-    cap = cv2.VideoCapture(prev_video_path)
+    # # 1. 이전 결과 영상 경로 업데이트
+    # prev_video_path = "/data/VACE/results/61_s.mp4" #"/data/VACE/results/vace-14B/2025-05-26-19-21-56/out_video.mp4"
+    # cap = cv2.VideoCapture(prev_video_path)
 
-    if not cap.isOpened():
-        logging.error(f"영상 열기에 실패했습니다: {prev_video_path}")
-    else:
-        logging.info(f"영상 열기 성공: {prev_video_path}")
+    # if not cap.isOpened():
+    #     logging.error(f"영상 열기에 실패했습니다: {prev_video_path}")
+    # else:
+    #     logging.info(f"영상 열기 성공: {prev_video_path}")
 
-        # 총 프레임 수 확인
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        logging.info(f"총 프레임 수: {total_frames}, FPS: {fps}")
+    #     # 총 프레임 수 확인
+    #     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    #     fps = cap.get(cv2.CAP_PROP_FPS)
+    #     logging.info(f"총 프레임 수: {total_frames}, FPS: {fps}")
 
-        if total_frames > 0:
-            # 2. 프레임 수 계산 (0.82초까지 사용)
-            src_frames = src_video[0].shape[1]  # 원본 프레임 수 (81프레임)
-            guide_duration_seconds = 2.6  # 가이드로 사용할 시간 (초)
-            target_fps = 24  # 목표 FPS (VACE 기본값)
+    #     if total_frames > 0:
+    #         # 2. 프레임 수 계산 (0.82초까지 사용)
+    #         src_frames = src_video[0].shape[1]  # 원본 프레임 수 (81프레임)
+    #         guide_duration_seconds = 2.6  # 가이드로 사용할 시간 (초)
+    #         target_fps = 24  # 목표 FPS (VACE 기본값)
             
-            # 가이드로 사용할 프레임 수 계산
-            guide_frames = int(guide_duration_seconds * target_fps)  # 0.82초* 24프레임/초 ≈ 20프레임
-            remaining_frames = src_frames - guide_frames  # 나머지 61프레임
+    #         # 가이드로 사용할 프레임 수 계산
+    #         guide_frames = int(guide_duration_seconds * target_fps)  # 0.82초* 24프레임/초 ≈ 20프레임
+    #         remaining_frames = src_frames - guide_frames  # 나머지 61프레임
             
-            logging.info(f"원본 영상 프레임 수: {src_frames}")
-            logging.info(f"가이드 프레임 수: {guide_frames}")
-            logging.info(f"새로 생성할 프레임 수: {remaining_frames}")
+    #         logging.info(f"원본 영상 프레임 수: {src_frames}")
+    #         logging.info(f"가이드 프레임 수: {guide_frames}")
+    #         logging.info(f"새로 생성할 프레임 수: {remaining_frames}")
             
-            # 3. 이전 영상에서 가이드 프레임 추출
-            frames_to_extract = min(guide_frames, total_frames)
-            extracted_frames = []
+    #         # 3. 이전 영상에서 가이드 프레임 추출
+    #         frames_to_extract = min(guide_frames, total_frames)
+    #         extracted_frames = []
             
-            # 앞부분 프레임 추출 (0.82초까지)
-            for i in range(frames_to_extract):
-                frame_idx = i
-                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-                ret, frame = cap.read()
-                if ret:
-                    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    frame_tensor = torch.from_numpy(frame).float() / 255.0
-                    frame_tensor = frame_tensor.permute(2, 0, 1)  # HWC -> CHW
-                    frame_tensor = frame_tensor.mul_(2).sub_(1)  # [0,1] -> [-1,1]
-                    extracted_frames.append(frame_tensor)
-                else:
-                    logging.error(f"프레임 {frame_idx} 읽기 실패")
+    #         # 앞부분 프레임 추출 (0.82초까지)
+    #         for i in range(frames_to_extract):
+    #             frame_idx = i
+    #             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+    #             ret, frame = cap.read()
+    #             if ret:
+    #                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    #                 frame_tensor = torch.from_numpy(frame).float() / 255.0
+    #                 frame_tensor = frame_tensor.permute(2, 0, 1)  # HWC -> CHW
+    #                 frame_tensor = frame_tensor.mul_(2).sub_(1)  # [0,1] -> [-1,1]
+    #                 extracted_frames.append(frame_tensor)
+    #             else:
+    #                 logging.error(f"프레임 {frame_idx} 읽기 실패")
             
-            if extracted_frames:
-                # 4. 추출한 프레임들을 텐서로 변환
-                extracted_tensor = torch.stack(extracted_frames, dim=1).to(device)
-                logging.info(f"이전 영상 추출 프레임 텐서 크기: {extracted_tensor.shape}")
+    #         if extracted_frames:
+    #             # 4. 추출한 프레임들을 텐서로 변환
+    #             extracted_tensor = torch.stack(extracted_frames, dim=1).to(device)
+    #             logging.info(f"이전 영상 추출 프레임 텐서 크기: {extracted_tensor.shape}")
                 
-                # 5. 원본 영상의 뒷부분 (새로 생성될 부분의 초기값)
-                original_back = src_video[0][:, guide_frames:].clone()
+    #             # 5. 원본 영상의 뒷부분 (새로 생성될 부분의 초기값)
+    #             original_back = src_video[0][:, guide_frames:].clone()
 
-                # 6. 새 영상 조합: 이전 영상의 좋은 부분(가이드) + 원본 영상의 뒷부분(생성 대상)
-                new_video = torch.cat([
-                    extracted_tensor,     # 이전 영상의 좋은 부분 (40프레임) - 가이드 역할
-                    original_back         # 원본 영상의 뒷부분 (41프레임) - 새로 생성될 부분
-                ], dim=1)
+    #             # 6. 새 영상 조합: 이전 영상의 좋은 부분(가이드) + 원본 영상의 뒷부분(생성 대상)
+    #             new_video = torch.cat([
+    #                 extracted_tensor,     # 이전 영상의 좋은 부분 (40프레임) - 가이드 역할
+    #                 original_back         # 원본 영상의 뒷부분 (41프레임) - 새로 생성될 부분
+    #             ], dim=1)
                 
-                # 7. CRITICAL: Update the mask to match the guidance
-                # The mask should NOT generate (mask=1) the guided portion in expanded areas
-                original_mask_back = src_mask[0][:, guide_frames:].clone()
+    #             # 7. CRITICAL: Update the mask to match the guidance
+    #             # The mask should NOT generate (mask=1) the guided portion in expanded areas
+    #             original_mask_back = src_mask[0][:, guide_frames:].clone()
                 
-                # DEBUG: 원본 마스크 상태 확인
-                logging.info(f"=== 마스크 디버깅 시작 ===")
-                logging.info(f"원본 전체 마스크 크기: {src_mask[0].shape}")
-                logging.info(f"원본 마스크 뒷부분 크기: {original_mask_back.shape}")
+    #             # DEBUG: 원본 마스크 상태 확인
+    #             logging.info(f"=== 마스크 디버깅 시작 ===")
+    #             logging.info(f"원본 전체 마스크 크기: {src_mask[0].shape}")
+    #             logging.info(f"원본 마스크 뒷부분 크기: {original_mask_back.shape}")
                 
-                # 원본 마스크의 생성 영역 확인 (mask=1인 영역)
-                original_mask_sum = (src_mask[0] > 0.5).sum(dim=(0, 2, 3))  # 각 프레임별 생성 픽셀 수
-                original_back_mask_sum = (original_mask_back > 0.5).sum(dim=(0, 2, 3))
+    #             # 원본 마스크의 생성 영역 확인 (mask=1인 영역)
+    #             original_mask_sum = (src_mask[0] > 0.5).sum(dim=(0, 2, 3))  # 각 프레임별 생성 픽셀 수
+    #             original_back_mask_sum = (original_mask_back > 0.5).sum(dim=(0, 2, 3))
                 
-                logging.info(f"원본 마스크 각 프레임별 생성 픽셀 수 (처음 10개): {original_mask_sum[:10].tolist()}")
-                logging.info(f"원본 마스크 뒷부분 각 프레임별 생성 픽셀 수 (처음 10개): {original_back_mask_sum[:10].tolist()}")
+    #             logging.info(f"원본 마스크 각 프레임별 생성 픽셀 수 (처음 10개): {original_mask_sum[:10].tolist()}")
+    #             logging.info(f"원본 마스크 뒷부분 각 프레임별 생성 픽셀 수 (처음 10개): {original_back_mask_sum[:10].tolist()}")
 
-                # FIXED: Check and match channel dimensions
-                mask_channels = original_mask_back.shape[0]  # Get actual mask channel count
-                logging.info(f"마스크 채널 수: {mask_channels}, 비디오 채널 수: {extracted_tensor.shape[0]}")
+    #             # FIXED: Check and match channel dimensions
+    #             mask_channels = original_mask_back.shape[0]  # Get actual mask channel count
+    #             logging.info(f"마스크 채널 수: {mask_channels}, 비디오 채널 수: {extracted_tensor.shape[0]}")
 
-                # CORRECTED: Create guided mask with ALL ZEROS (no generation for guided frames)
-                # 가이드 프레임에서는 아무것도 생성하지 않음 (모두 0으로 설정)
-                guided_mask = torch.zeros((mask_channels, extracted_tensor.shape[1], 
-                                        extracted_tensor.shape[2], extracted_tensor.shape[3]), 
-                                        device=extracted_tensor.device, dtype=original_mask_back.dtype)
+    #             # CORRECTED: Create guided mask with ALL ZEROS (no generation for guided frames)
+    #             # 가이드 프레임에서는 아무것도 생성하지 않음 (모두 0으로 설정)
+    #             guided_mask = torch.zeros((mask_channels, extracted_tensor.shape[1], 
+    #                                     extracted_tensor.shape[2], extracted_tensor.shape[3]), 
+    #                                     device=extracted_tensor.device, dtype=original_mask_back.dtype)
                 
-                logging.info(f"가이드 마스크 생성 - 전체가 0 (생성하지 않음): {(guided_mask == 0).all()}")
+    #             logging.info(f"가이드 마스크 생성 - 전체가 0 (생성하지 않음): {(guided_mask == 0).all()}")
                 
-                # Combine guided mask with original mask for remaining frames
-                new_mask = torch.cat([
-                    guided_mask,          # Guided portion: NO generation (all zeros)
-                    original_mask_back    # Remaining portion: use original mask
-                ], dim=1)
+    #             # Combine guided mask with original mask for remaining frames
+    #             new_mask = torch.cat([
+    #                 guided_mask,          # Guided portion: NO generation (all zeros)
+    #                 original_mask_back    # Remaining portion: use original mask
+    #             ], dim=1)
                 
-                # DEBUG: 결합된 마스크 확인
-                new_mask_sum = (new_mask > 0.5).sum(dim=(0, 2, 3))
-                logging.info(f"결합된 마스크 각 프레임별 생성 픽셀 수:")
-                logging.info(f"  - 가이드 부분 (0~{guide_frames-1}): {new_mask_sum[:guide_frames].tolist()}")
-                logging.info(f"  - 생성 부분 ({guide_frames}~{guide_frames+10}): {new_mask_sum[guide_frames:guide_frames+10].tolist()}")
+    #             # DEBUG: 결합된 마스크 확인
+    #             new_mask_sum = (new_mask > 0.5).sum(dim=(0, 2, 3))
+    #             logging.info(f"결합된 마스크 각 프레임별 생성 픽셀 수:")
+    #             logging.info(f"  - 가이드 부분 (0~{guide_frames-1}): {new_mask_sum[:guide_frames].tolist()}")
+    #             logging.info(f"  - 생성 부분 ({guide_frames}~{guide_frames+10}): {new_mask_sum[guide_frames:guide_frames+10].tolist()}")
                 
-                # 전체 마스크 통계
-                total_guided_pixels = (guided_mask > 0.5).sum().item()
-                total_original_back_pixels = (original_mask_back > 0.5).sum().item()
-                total_new_mask_pixels = (new_mask > 0.5).sum().item()
+    #             # 전체 마스크 통계
+    #             total_guided_pixels = (guided_mask > 0.5).sum().item()
+    #             total_original_back_pixels = (original_mask_back > 0.5).sum().item()
+    #             total_new_mask_pixels = (new_mask > 0.5).sum().item()
                 
-                logging.info(f"전체 생성 픽셀 수:")
-                logging.info(f"  - 가이드 마스크: {total_guided_pixels}")
-                logging.info(f"  - 원본 뒷부분 마스크: {total_original_back_pixels}")
-                logging.info(f"  - 결합된 마스크: {total_new_mask_pixels}")
-                logging.info(f"=== 마스크 디버깅 종료 ===")
+    #             logging.info(f"전체 생성 픽셀 수:")
+    #             logging.info(f"  - 가이드 마스크: {total_guided_pixels}")
+    #             logging.info(f"  - 원본 뒷부분 마스크: {total_original_back_pixels}")
+    #             logging.info(f"  - 결합된 마스크: {total_new_mask_pixels}")
+    #             logging.info(f"=== 마스크 디버깅 종료 ===")
 
-                # 8. 길이 검증 및 조정
-                if new_video.shape[1] != src_frames:
-                    if new_video.shape[1] > src_frames:
-                        new_video = new_video[:, :src_frames]
-                        new_mask = new_mask[:, :src_frames]
-                    else:
-                        # 부족한 경우 패딩 추가
-                        padding = src_frames - new_video.shape[1]
-                        padding_frames = src_video[0][:, -padding:].clone()
-                        padding_masks = src_mask[0][:, -padding:].clone()
-                        new_video = torch.cat([new_video, padding_frames], dim=1)
-                        new_mask = torch.cat([new_mask, padding_masks], dim=1)
+    #             # 8. 길이 검증 및 조정
+    #             if new_video.shape[1] != src_frames:
+    #                 if new_video.shape[1] > src_frames:
+    #                     new_video = new_video[:, :src_frames]
+    #                     new_mask = new_mask[:, :src_frames]
+    #                 else:
+    #                     # 부족한 경우 패딩 추가
+    #                     padding = src_frames - new_video.shape[1]
+    #                     padding_frames = src_video[0][:, -padding:].clone()
+    #                     padding_masks = src_mask[0][:, -padding:].clone()
+    #                     new_video = torch.cat([new_video, padding_frames], dim=1)
+    #                     new_mask = torch.cat([new_mask, padding_masks], dim=1)
                 
-                # 9. 최종 적용
-                src_video[0] = new_video
-                src_mask[0] = new_mask  # IMPORTANT: Update the mask too
+    #             # 9. 최종 적용
+    #             src_video[0] = new_video
+    #             src_mask[0] = new_mask  # IMPORTANT: Update the mask too
                 
-                logging.info(f"영상 재구성 완료. 최종 영상 크기: {src_video[0].shape}")
-                logging.info(f"마스크 재구성 완료. 최종 마스크 크기: {src_mask[0].shape}")
-                logging.info(f"가이드 프레임: {guide_frames}, 새로 생성될 프레임: {remaining_frames}")
-            else:
-                logging.error("이전 영상에서 추출된 프레임이 없습니다.")
-        else:
-            logging.error("영상의 프레임 수가 0입니다.")
+    #             logging.info(f"영상 재구성 완료. 최종 영상 크기: {src_video[0].shape}")
+    #             logging.info(f"마스크 재구성 완료. 최종 마스크 크기: {src_mask[0].shape}")
+    #             logging.info(f"가이드 프레임: {guide_frames}, 새로 생성될 프레임: {remaining_frames}")
+    #         else:
+    #             logging.error("이전 영상에서 추출된 프레임이 없습니다.")
+    #     else:
+    #         logging.error("영상의 프레임 수가 0입니다.")
 
     # # 자원 해제
     # cap.release()
@@ -601,7 +623,7 @@ def main(args):
         cache_video(
             tensor=video[None],
             save_file=save_file,
-            fps=cfg.sample_fps,
+            fps=actual_fps,
             nrow=1,
             normalize=True,
             value_range=(-1, 1))
@@ -612,7 +634,7 @@ def main(args):
         cache_video(
             tensor=src_video[0][None],
             save_file=save_file,
-            fps=cfg.sample_fps,
+            fps=actual_fps,
             nrow=1,
             normalize=True,
             value_range=(-1, 1))
@@ -623,7 +645,7 @@ def main(args):
         cache_video(
             tensor=src_mask[0][None],
             save_file=save_file,
-            fps=cfg.sample_fps,
+            fps=actual_fps,
             nrow=1,
             normalize=True,
             value_range=(0, 1))
