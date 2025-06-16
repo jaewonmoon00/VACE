@@ -195,7 +195,11 @@ def get_parser():
         type=str,
         default=None,
         help="The prompt to generate the image or video from.")
-    
+    parser.add_argument(
+        "--neg_prompt",
+        type=str,
+        default=None,
+        help="The negative prompt to avoid unwanted features. Will be combined with the model's default negative prompt.")
     parser.add_argument(
         "--use_prompt_extend",
         default='plain',
@@ -315,6 +319,13 @@ def main(args):
             dist.broadcast_object_list(input_prompt, src=0)
         args.prompt = input_prompt[0]
         logging.info(f"Extended prompt: {args.prompt}")
+
+    original_neg_prompt = cfg.sample_neg_prompt  # Store original
+    if args.neg_prompt:
+        # Temporarily modify the config's negative prompt
+        cfg.sample_neg_prompt = f"{args.neg_prompt}, {original_neg_prompt}"
+        logging.info(f"User negative prompt: {args.neg_prompt}")
+    logging.info(f"Final negative prompt: {cfg.sample_neg_prompt}")
 
     logging.info("Getting model from cache or loading new model...")
     wan_vace = get_cached_model(
@@ -589,6 +600,9 @@ def main(args):
         guide_scale=args.sample_guide_scale,
         seed=args.base_seed,
         offload_model=args.offload_model)
+
+    # CLEANUP: Restore original negative prompt
+    cfg.sample_neg_prompt = original_neg_prompt
 
     ret_data = {}
     if rank == 0:

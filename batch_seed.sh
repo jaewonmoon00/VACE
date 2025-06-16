@@ -27,6 +27,7 @@ for i in $(seq 1 $RUN_COUNT); do
         --expand_ratio 1.6 \
         --video "$VIDEO_PATH" \
         --prompt "" \
+	--neg_prompt "no human" \
         --base_seed $current_seed \
         --dit_fsdp \
         --t5_fsdp \
