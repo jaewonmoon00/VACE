@@ -219,7 +219,20 @@ def main(args):
     # output data
     save_fps = fps if fps is not None else save_fps
     if args.pre_save_dir is None:
-        pre_save_dir = os.path.join('processed', task_name, time.strftime('%Y-%m-%d-%H-%M-%S', time.localtime(time.time())))
+        # 입력 파일명 추출
+        input_filename = None
+        if video_path:
+            input_filename = os.path.splitext(os.path.basename(video_path.split(",")[0]))[0]
+        elif image_path:
+            input_filename = os.path.splitext(os.path.basename(image_path.split(",")[0]))[0]
+        
+        timestamp = time.strftime('%Y-%m-%d-%H-%M-%S', time.localtime(time.time()))
+        
+        if input_filename:
+            folder_name = f"{input_filename}_{timestamp}"
+        else:
+            folder_name = timestamp
+        pre_save_dir = os.path.join('processed', task_name,  folder_name)
     else:
         pre_save_dir = args.pre_save_dir
     if not os.path.exists(pre_save_dir):

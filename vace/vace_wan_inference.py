@@ -348,6 +348,8 @@ def main(args):
         cap = cv2.VideoCapture(args.src_video)
         if cap.isOpened():
             input_fps = cap.get(cv2.CAP_PROP_FPS)
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            
             if input_fps > 0:
                 actual_fps = input_fps
                 logging.info(f"Using input video FPS: {actual_fps}")
@@ -604,82 +606,107 @@ def main(args):
     # CLEANUP: Restore original negative prompt
     cfg.sample_neg_prompt = original_neg_prompt
 
-    ret_data = {}
-    if rank == 0:
-        if args.save_dir is None:
-            # 입력 파일명에서 디렉토리명 생성
-            input_name = ""
-            if args.src_video:
-                input_name = os.path.splitext(os.path.basename(args.src_video))[0]
-            elif args.src_ref_images:
-                # 첫 번째 참조 이미지의 파일명 사용
-                first_ref = args.src_ref_images.split(',')[0]
-                input_name = os.path.splitext(os.path.basename(first_ref))[0]
+    try:
+        ret_data = {}
+        if rank == 0:
+            if args.save_dir is None:
+                # 입력 파일명에서 디렉토리명 생성
+                input_name = ""
+                if args.src_video:
+                    # 1. 폴더명에서 원본 파일명 추출
+                    dir_path = os.path.dirname(args.src_video)
+                    folder_name = os.path.basename(dir_path)  # "272_2025-06-16-09-45-06"
+                    
+                    # 타임스탬프 제거하여 원본 파일명 추출
+                    import re
+                    pattern = r'_\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}$'
+                    original_name = re.sub(pattern, '', folder_name)  # "272"
+                    
+                    # 2. 파일명에서 작업명 추출
+                    filename = os.path.basename(args.src_video)  # "src_video-outpainting.mp4"
+                    filename_without_ext = os.path.splitext(filename)[0]  # "src_video-outpainting"
+                    
+                    # "src_video-" 제거하여 작업명만 추출
+                    if filename_without_ext.startswith('src_video-'):
+                        task_name = filename_without_ext[len('src_video-'):]  # "outpainting"
+                    else:
+                        task_name = filename_without_ext
+                    
+                    # 3. 현재 시간 생성
+                    import time
+                    current_time = time.strftime('%Y-%m-%d-%H-%M-%S', time.localtime(time.time()))
+                    
+                    # 4. 최종 조합
+                    input_name = f"{original_name}-{task_name}-{current_time}"  # "272-outpainting-2025-06-16-15-30-45"
+                    
+                    print(f"Input name: {input_name}")
+                    save_dir = os.path.join('results', args.model_name, input_name)
             else:
-                # 프롬프트의 일부를 사용 (특수문자 제거)
-                import re
-                prompt_part = re.sub(r'[^\w\s-]', '', args.prompt[:30])
-                prompt_part = re.sub(r'[-\s]+', '_', prompt_part)
-                input_name = prompt_part if prompt_part else "text_prompt"
-            
-            timestamp = time.strftime('%Y-%m-%d-%H-%M-%S', time.localtime(time.time()))
-            save_dir = os.path.join('results', args.model_name, f"{input_name}_{timestamp}")
-        else:
-            save_dir = args.save_dir
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
+                save_dir = args.save_dir
+            if not os.path.exists(save_dir):
+                os.makedirs(save_dir)
 
-        if args.save_file is not None:
-            save_file = args.save_file
-        else:
-            save_file = os.path.join(save_dir, 'out_video.mp4')
+            if args.save_file is not None:
+                save_file = args.save_file
+            else:
+                save_file = os.path.join(save_dir, 'out_video.mp4')
 
-        cache_video(
-            tensor=video[None],
-            save_file=save_file,
-            fps=actual_fps,
-            nrow=1,
-            normalize=True,
-            value_range=(-1, 1))
-        logging.info(f"Saving generated video to {save_file}")
-        ret_data['out_video'] = save_file
+            cache_video(
+                tensor=video[None],
+                save_file=save_file,
+                fps=actual_fps,
+                nrow=1,
+                normalize=True,
+                value_range=(-1, 1))
+            logging.info(f"Saving generated video to {save_file}")
+            ret_data['out_video'] = save_file
 
-        save_file = os.path.join(save_dir, 'src_video.mp4')
-        cache_video(
-            tensor=src_video[0][None],
-            save_file=save_file,
-            fps=actual_fps,
-            nrow=1,
-            normalize=True,
-            value_range=(-1, 1))
-        logging.info(f"Saving src_video to {save_file}")
-        ret_data['src_video'] = save_file
+            save_file = os.path.join(save_dir, 'src_video.mp4')
+            cache_video(
+                tensor=src_video[0][None],
+                save_file=save_file,
+                fps=actual_fps,
+                nrow=1,
+                normalize=True,
+                value_range=(-1, 1))
+            logging.info(f"Saving src_video to {save_file}")
+            ret_data['src_video'] = save_file
 
-        save_file = os.path.join(save_dir, 'src_mask.mp4')
-        cache_video(
-            tensor=src_mask[0][None],
-            save_file=save_file,
-            fps=actual_fps,
-            nrow=1,
-            normalize=True,
-            value_range=(0, 1))
-        logging.info(f"Saving src_mask to {save_file}")
-        ret_data['src_mask'] = save_file
+            save_file = os.path.join(save_dir, 'src_mask.mp4')
+            cache_video(
+                tensor=src_mask[0][None],
+                save_file=save_file,
+                fps=actual_fps,
+                nrow=1,
+                normalize=True,
+                value_range=(0, 1))
+            logging.info(f"Saving src_mask to {save_file}")
+            ret_data['src_mask'] = save_file
 
-        if src_ref_images[0] is not None:
-            for i, ref_img in enumerate(src_ref_images[0]):
-                save_file = os.path.join(save_dir, f'src_ref_image_{i}.png')
-                cache_image(
-                    tensor=ref_img[:, 0, ...],
-                    save_file=save_file,
-                    nrow=1,
-                    normalize=True,
-                    value_range=(-1, 1))
-                logging.info(f"Saving src_ref_image_{i} to {save_file}")
-                ret_data[f'src_ref_image_{i}'] = save_file
-    logging.info("Finished.")
-    return ret_data
-
+            if src_ref_images[0] is not None:
+                for i, ref_img in enumerate(src_ref_images[0]):
+                    save_file = os.path.join(save_dir, f'src_ref_image_{i}.png')
+                    cache_image(
+                        tensor=ref_img[:, 0, ...],
+                        save_file=save_file,
+                        nrow=1,
+                        normalize=True,
+                        value_range=(-1, 1))
+                    logging.info(f"Saving src_ref_image_{i} to {save_file}")
+                    ret_data[f'src_ref_image_{i}'] = save_file
+        logging.info("Finished.")
+        return ret_data
+    except Exception as e:
+        logging.error(f"Error during execution: {e}")
+        raise
+    finally:
+        # 분산 처리 정리
+        if dist.is_initialized():
+            try:
+                logging.info("Destroying process group...")
+                dist.destroy_process_group()
+            except Exception as e:
+                logging.warning(f"Error during cleanup: {e}")
 
 if __name__ == "__main__":
     args = get_parser().parse_args()

@@ -4,7 +4,7 @@
 RUN_COUNT=1
 
 # 비디오 경로
-VIDEO_PATH="/data/VACE/inputs/video_00002043_chunk1.mov"
+VIDEO_PATH="/data/VACE/inputs/272.mp4"
 
 echo "랜덤 시드로 $RUN_COUNT 번 실행 시작"
 echo "처리할 영상: $(basename "$VIDEO_PATH")"
@@ -27,7 +27,7 @@ for i in $(seq 1 $RUN_COUNT); do
         --expand_ratio 1.6 \
         --video "$VIDEO_PATH" \
         --prompt "" \
-	--neg_prompt "no human" \
+	--neg_prompt "" \
         --base_seed $current_seed \
         --dit_fsdp \
         --t5_fsdp \
