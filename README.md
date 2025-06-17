@@ -1,189 +1,243 @@
-<p align="center">
+# VACE Custom Video Outpainting Pipeline
 
-<h1 align="center">VACE: All-in-One Video Creation and Editing</h1>
-<p align="center">
-    <strong>Zeyinzi Jiang<sup>*</sup></strong>
-    ·
-    <strong>Zhen Han<sup>*</sup></strong>
-    ·
-    <strong>Chaojie Mao<sup>*&dagger;</sup></strong>
-    ·
-    <strong>Jingfeng Zhang</strong>
-    ·
-    <strong>Yulin Pan</strong>
-    ·
-    <strong>Yu Liu</strong>
-    <br>
-    <b>Tongyi Lab - <a href="https://github.com/Wan-Video/Wan2.1"><img src='https://ali-vilab.github.io/VACE-Page/assets/logos/wan_logo.png' alt='wan_logo' style='margin-bottom: -4px; height: 20px;'></a> </b>
-    <br>
-    <br>
-        <a href="https://arxiv.org/abs/2503.07598"><img src='https://img.shields.io/badge/VACE-arXiv-red' alt='Paper PDF'></a>
-        <a href="https://ali-vilab.github.io/VACE-Page/"><img src='https://img.shields.io/badge/VACE-Project_Page-green' alt='Project Page'></a>
-        <a href="https://huggingface.co/collections/ali-vilab/vace-67eca186ff3e3564726aff38"><img src='https://img.shields.io/badge/VACE-HuggingFace_Model-yellow'></a>
-        <a href="https://modelscope.cn/collections/VACE-8fa5fcfd386e43"><img src='https://img.shields.io/badge/VACE-ModelScope_Model-purple'></a>
-    <br>
-</p>
+본 프로젝트는 오픈소스 [VACE (All-in-One Video Creation and Editing)](https://github.com/ali-vilab/VACE) 모델을 기반으로 한 커스터마이징된 영상 아웃페인팅 파이프라인입니다. **VACE 14B 모델**을 사용하여 **1.6:1:1.6 비율로 좌우 영상 확장**을 수행하며, 다중 GPU 환경에서의 배치 처리를 지원합니다.
 
+## 🌟 주요 기능
 
-## Introduction
-<strong>VACE</strong> is an all-in-one model designed for video creation and editing. It encompasses various tasks, including reference-to-video generation (<strong>R2V</strong>), video-to-video editing (<strong>V2V</strong>), and masked video-to-video editing (<strong>MV2V</strong>), allowing users to compose these tasks freely. This functionality enables users to explore diverse possibilities and streamlines their workflows effectively, offering a range of capabilities, such as Move-Anything, Swap-Anything, Reference-Anything, Expand-Anything, Animate-Anything, and more.
+- **VACE 14B 모델 기반 고품질 영상 아웃페인팅**: 1.6:1:1.6 비율로 좌우 영상 확장
+- **81프레임 단위 자동 분할 및 처리**: 메모리 부족 문제 해결
+- **배치 처리 시스템**: 다수의 영상에 대한 자동화된 일괄 처리  
+- **다중 GPU 병렬처리**: 메모리 부족 문제 해결을 위한 분산 처리
+- **프롬프트 기반 영상 생성**: 씬별 맞춤형 프롬프트 적용
+- **결과물 일관성 유지**: 영상 분할 시에도 자연스러운 연결
 
-<img src='./assets/materials/teaser.jpg'>
+## 📋 주요 제약사항 및 해결책
 
+### 알려진 제약사항
+1. **메모리 제한**: 3초 이상 영상 처리 시 메모리 부족 문제 ([관련 이슈](https://github.com/ali-vilab/VACE/issues/56))
+2. **프레임 정확성**: 입력 영상이 정확히 81프레임이 아닐 경우 결과물 프레임 수 불일치 가능
+3. **한글 파일명**: 한글 파일명 인식 불가 (영문 변환 필요)
 
-## 🎉 News
-- [x] May 14, 2025: 🔥Wan2.1-VACE-1.3B and Wan2.1-VACE-14B models are now available at [HuggingFace](https://huggingface.co/Wan-AI/Wan2.1-VACE-14B) and [ModelScope](https://www.modelscope.cn/models/Wan-AI/Wan2.1-VACE-14B)!
-- [x] Mar 31, 2025: 🔥VACE-Wan2.1-1.3B-Preview and VACE-LTX-Video-0.9 models are now available at [HuggingFace](https://huggingface.co/collections/ali-vilab/vace-67eca186ff3e3564726aff38) and [ModelScope](https://modelscope.cn/collections/VACE-8fa5fcfd386e43)!
-- [x] Mar 31, 2025: 🔥Release code of model inference, preprocessing, and gradio demos. 
-- [x] Mar 11, 2025: We propose [VACE](https://ali-vilab.github.io/VACE-Page/), an all-in-one model for video creation and editing.
+### 해결책
+- **영상 분할**: `video_splitter.py`를 통한 81프레임 단위 분할 및 패딩
+- **다중 GPU**: 분산 처리를 통한 메모리 부족 문제 해결
+- **파일명 정규화**: 영문 파일명 자동 변환 스크립트 제공
 
+## 🚀 시작하기
 
-## 🪄 Models
-| Models                   | Download Link                                                                                                                                           | Video Size        | License                                                                                       |
-|--------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------|-----------------------------------------------------------------------------------------------|
-| VACE-Wan2.1-1.3B-Preview | [Huggingface](https://huggingface.co/ali-vilab/VACE-Wan2.1-1.3B-Preview) 🤗  [ModelScope](https://modelscope.cn/models/iic/VACE-Wan2.1-1.3B-Preview) 🤖 | ~ 81 x 480 x 832  | [Apache-2.0](https://huggingface.co/Wan-AI/Wan2.1-T2V-1.3B/blob/main/LICENSE.txt)             |
-| VACE-LTX-Video-0.9       | [Huggingface](https://huggingface.co/ali-vilab/VACE-LTX-Video-0.9) 🤗     [ModelScope](https://modelscope.cn/models/iic/VACE-LTX-Video-0.9) 🤖          | ~ 97 x 512 x 768  | [RAIL-M](https://huggingface.co/Lightricks/LTX-Video/blob/main/ltx-video-2b-v0.9.license.txt) |
-| Wan2.1-VACE-1.3B         | [Huggingface](https://huggingface.co/Wan-AI/Wan2.1-VACE-1.3B) 🤗     [ModelScope](https://www.modelscope.cn/models/Wan-AI/Wan2.1-VACE-1.3B) 🤖          | ~ 81 x 480 x 832  | [Apache-2.0](https://huggingface.co/Wan-AI/Wan2.1-T2V-1.3B/blob/main/LICENSE.txt)             |
-| Wan2.1-VACE-14B          | [Huggingface](https://huggingface.co/Wan-AI/Wan2.1-VACE-14B) 🤗     [ModelScope](https://www.modelscope.cn/models/Wan-AI/Wan2.1-VACE-14B) 🤖            | ~ 81 x 720 x 1280 | [Apache-2.0](https://huggingface.co/Wan-AI/Wan2.1-T2V-14B/blob/main/LICENSE.txt)             |
+### 전제 조건
 
-- The input supports any resolution, but to achieve optimal results, the video size should fall within a specific range.
-- All models inherit the license of the original model.
+- Python 3.8+
+- CUDA 지원 GPU (다중 GPU 권장, 최소 24GB VRAM)
+- FFmpeg (영상 분할용)
 
+### 설치
 
-## ⚙️ Installation
-The codebase was tested with Python 3.10.13, CUDA version 12.4, and PyTorch >= 2.5.1.
-
-### Setup for Model Inference
-You can setup for VACE model inference by running:
 ```bash
-git clone https://github.com/ali-vilab/VACE.git && cd VACE
-pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu124  # If PyTorch is not installed.
+# VACE repository 클론
+git clone https://github.com/your-username/vace.git
+cd vace
+
+# 의존성 설치
 pip install -r requirements.txt
-pip install wan@git+https://github.com/Wan-Video/Wan2.1  # If you want to use Wan2.1-based VACE.
-pip install ltx-video@git+https://github.com/Lightricks/LTX-Video@ltx-video-0.9.1 sentencepiece --no-deps # If you want to use LTX-Video-0.9-based VACE. It may conflict with Wan.
-```
-Please download your preferred base model to `<repo-root>/models/`. 
+pip install wan@git+https://github.com/Wan-Video/Wan2.1
 
-### Setup for Preprocess Tools
-If you need preprocessing tools, please install:
+# VACE 14B 모델 다운로드
+# models/ 디렉토리에 Wan2.1-VACE-14B 모델 배치
+```
+
+## 📁 디렉토리 구조
+
+```
+├── inputs/                    # 처리할 영상 파일들 (81프레임 청크)
+├── outputs/                   # 결과물 저장 디렉토리  
+├── pre_processed_files/       # 전처리 대상 원본 영상들
+├── results/                   # 최종 결과물 저장 디렉토리
+├── video_splitter.py         # 영상 분할 도구
+├── batch_video_with_prompts.sh  # 배치 처리 스크립트
+├── video_prompts.txt         # 프롬프트 설정 파일
+└── vace_wan_inference.py     # 메인 추론 스크립트
+```
+
+## 📋 사용 방법
+
+### 1. 영상 준비 및 분할
+
+#### 영상을 81프레임 단위로 분할
 ```bash
-pip install -r requirements/annotator.txt
-```
-Please download [VACE-Annotators](https://huggingface.co/ali-vilab/VACE-Annotators) to `<repo-root>/models/`.
+# 단일 영상 분할
+python video_splitter.py input_video.mov -o ./inputs/
 
-### Local Directories Setup
-It is recommended to download [VACE-Benchmark](https://huggingface.co/datasets/ali-vilab/VACE-Benchmark) to `<repo-root>/benchmarks/` as examples in `run_vace_xxx.sh`.
-
-We recommend to organize local directories as:
-```angular2html
-VACE
-├── ...
-├── benchmarks
-│   └── VACE-Benchmark
-│       └── assets
-│           └── examples
-│               ├── animate_anything
-│               │   └── ...
-│               └── ...
-├── models
-│   ├── VACE-Annotators
-│   │   └── ...
-│   ├── VACE-LTX-Video-0.9
-│   │   └── ...
-│   └── VACE-Wan2.1-1.3B-Preview
-│       └── ...
-└── ...
+# 여러 영상 일괄 분할  
+for video in ./pre_processed_files/*.mov; do 
+    python video_splitter.py "$video" -o ./inputs/
+done
 ```
 
-## 🚀 Usage
-In VACE, users can input **text prompt** and optional **video**, **mask**, and **image** for video generation or editing.
-Detailed instructions for using VACE can be found in the [User Guide](./UserGuide.md).
-
-### Inference CIL
-#### 1) End-to-End Running
-To simply run VACE without diving into any implementation details, we suggest an end-to-end pipeline. For example:
+#### 한글 파일명 영문 변환
 ```bash
-# run V2V depth
-python vace/vace_pipeline.py --base wan --task depth --video assets/videos/test.mp4 --prompt 'xxx'
-
-# run MV2V inpainting by providing bbox
-python vace/vace_pipeline.py --base wan --task inpainting --mode bbox --bbox 50,50,550,700 --video assets/videos/test.mp4 --prompt 'xxx'
+# 파일명 정규화 (한글 → 영문)
+for file in *.mov; do
+    number=$(echo "$file" | grep -o '[0-9]\{8\}' | head -1)
+    chunk=$(echo "$file" | grep -o 'chunk[0-9]')
+    new_name="video_${number}_${chunk}.mov"
+    mv "$file" "$new_name"
+done
 ```
-This script will run video preprocessing and model inference sequentially, 
-and you need to specify all the required args of preprocessing (`--task`, `--mode`, `--bbox`, `--video`, etc.) and inference (`--prompt`, etc.). 
-The output video together with intermediate video, mask and images will be saved into `./results/` by default.
 
-> 💡**Note**:
-> Please refer to [run_vace_pipeline.sh](./run_vace_pipeline.sh) for usage examples of different task pipelines.
+### 2. 프롬프트 설정
 
+`video_prompts.txt` 파일에 다음 형식으로 작성:
 
-#### 2) Preprocessing
-To have more flexible control over the input, before VACE model inference, user inputs need to be preprocessed into `src_video`, `src_mask`, and `src_ref_images` first.
-We assign each [preprocessor](./vace/configs/__init__.py) a task name, so simply call [`vace_preprocess.py`](./vace/vace_preproccess.py) and specify the task name and task params. For example:
-```angular2html
-# process video depth
-python vace/vace_preproccess.py --task depth --video assets/videos/test.mp4
-
-# process video inpainting by providing bbox
-python vace/vace_preproccess.py --task inpainting --mode bbox --bbox 50,50,550,700 --video assets/videos/test.mp4
 ```
-The outputs will be saved to `./processed/` by default.
+video_00000024_chunk1.mov|dark room, no lights, no people
+video_00000057_chunk1.mov|The person in the middle is giving a speech alone in a dark room
+video_00000184_chunk1.mov|A cloudless sky
+video_00000227_chunk1.mov|People waving blue flags and cheering
+video_00000370_chunk1.mov|
+```
 
-> 💡**Note**:
-> Please refer to [run_vace_pipeline.sh](./run_vace_pipeline.sh) preprocessing methods for different tasks.
-Moreover, refer to [vace/configs/](./vace/configs/) for all the pre-defined tasks and required params.
-You can also customize preprocessors by implementing at [`annotators`](./vace/annotators/__init__.py) and register them at [`configs`](./vace/configs).
+### 3. 영상 처리 실행
 
-
-#### 3) Model inference
-Using the input data obtained from **Preprocessing**, the model inference process can be performed as follows:
+#### 단일 영상 처리
 ```bash
-# For Wan2.1 single GPU inference (1.3B-480P)
-python vace/vace_wan_inference.py --ckpt_dir <path-to-model> --src_video <path-to-src-video> --src_mask <path-to-src-mask> --src_ref_images <paths-to-src-ref-images> --prompt "xxx"
-
-# For Wan2.1 Multi GPU Acceleration inference (1.3B-480P)
-pip install "xfuser>=0.4.1"
-torchrun --nproc_per_node=8 vace/vace_wan_inference.py --dit_fsdp --t5_fsdp --ulysses_size 1 --ring_size 8 --ckpt_dir <path-to-model> --src_video <path-to-src-video> --src_mask <path-to-src-mask> --src_ref_images <paths-to-src-ref-images> --prompt "xxx"
-
-# For Wan2.1 Multi GPU Acceleration inference (14B-720P)
-torchrun --nproc_per_node=8 vace/vace_wan_inference.py --dit_fsdp --t5_fsdp --ulysses_size 8 --ring_size 1 --size 720p --model_name 'vace-14B' --ckpt_dir <path-to-model> --src_video <path-to-src-video> --src_mask <path-to-src-mask> --src_ref_images <paths-to-src-ref-images> --prompt "xxx"
-
-# For LTX inference, run
-python vace/vace_ltx_inference.py --ckpt_path <path-to-model> --text_encoder_path <path-to-model> --src_video <path-to-src-video> --src_mask <path-to-src-mask> --src_ref_images <paths-to-src-ref-images> --prompt "xxx"
+python vace/vace_pipeline.py \
+    --base wan \
+    --task outpainting \
+    --direction 'left,right' \
+    --expand_ratio 1.6 \
+    --video input_video.mov \
+    --prompt "your prompt here" \
+    --base_seed 2025
 ```
-The output video together with intermediate video, mask and images will be saved into `./results/` by default.
 
-> 💡**Note**: 
-> (1) Please refer to [vace/vace_wan_inference.py](./vace/vace_wan_inference.py) and [vace/vace_ltx_inference.py](./vace/vace_ltx_inference.py) for the inference args.
-> (2) For LTX-Video and English language Wan2.1 users, you need prompt extension to unlock the full model performance. 
-Please follow the [instruction of Wan2.1](https://github.com/Wan-Video/Wan2.1?tab=readme-ov-file#2-using-prompt-extension) and set `--use_prompt_extend` while running inference.
-> (3) When performing prompt extension in editing tasks, it's important to pay attention to the results of expanding plain text. Since the visual information being input is unknown, this may lead to the extended output not matching the video being edited, which can affect the final outcome.
-
-### Inference Gradio
-For preprocessors, run 
+#### 배치 처리 (권장)
 ```bash
-python vace/gradios/vace_preprocess_demo.py
+# 프롬프트 파일 기반 배치 처리
+bash batch_video_with_prompts.sh
 ```
-For model inference, run
+
+#### 다중 GPU 환경에서 실행
 ```bash
-# For Wan2.1 gradio inference
-python vace/gradios/vace_wan_demo.py
-
-# For LTX gradio inference
-python vace/gradios/vace_ltx_demo.py
+# 2개 GPU 사용 예시
+torchrun --nproc-per-node=2 vace/vace_pipeline.py \
+    --base wan \
+    --task outpainting \
+    --direction 'left,right' \
+    --expand_ratio 1.6 \
+    --video "$video_file" \
+    --prompt "$prompt" \
+    --base_seed $current_seed \
+    --dit_fsdp \
+    --t5_fsdp \
+    --ulysses_size 2 \
+    --ring_size 1
 ```
 
-## Acknowledgement
+## ⚙️ 주요 매개변수
 
-We are grateful for the following awesome projects, including [Scepter](https://github.com/modelscope/scepter), [Wan](https://github.com/Wan-Video/Wan2.1), and [LTX-Video](https://github.com/Lightricks/LTX-Video).
+### 필수 매개변수
+- `--video`: 입력 영상 경로
+- `--prompt`: 생성할 장면에 대한 텍스트 설명
+- `--direction`: 확장 방향 ('left,right' 권장)
+- `--expand_ratio`: 확장 비율 (1.6 권장)
 
+### 선택적 매개변수  
+- `--base_seed`: 랜덤 시드 (재현성을 위해 고정값 권장)
+- `--dit_fsdp`: DiT 모델 분산 처리 활성화
+- `--t5_fsdp`: T5 텍스트 인코더 분산 처리 활성화
+- `--ulysses_size`: Ulysses 병렬 처리 크기
+- `--ring_size`: Ring attention 병렬 처리 크기
 
-## BibTeX
+## 🔧 고급 기능
 
-```bibtex
-@article{vace,
-    title = {VACE: All-in-One Video Creation and Editing},
-    author = {Jiang, Zeyinzi and Han, Zhen and Mao, Chaojie and Zhang, Jingfeng and Pan, Yulin and Liu, Yu},
-    journal = {arXiv preprint arXiv:2503.07598},
-    year = {2025}
-}
+### 모델 캐싱
+모델 로딩 시간을 단축하기 위해 메모리 기반 캐싱을 지원합니다:
+```bash
+export MODEL_CACHE_TIMEOUT=3600  # 1시간 캐시 유지
+```
+
+### 프롬프트 자동 확장
+LLM을 사용한 프롬프트 자동 확장 기능:
+```bash
+python vace/vace_wan_inference.py \
+    --use_prompt_extend wan_zh \  # 중국어 확장
+    # 또는 wan_en (영어 확장)
+    --prompt "간단한 프롬프트"
+```
+
+### 커스텀 네거티브 프롬프트
+```bash
+python vace/vace_wan_inference.py \
+    --neg_prompt "unwanted elements, blurry, distorted" \
+    --prompt "your prompt"
+```
+
+## 📊 성능 최적화
+
+### GPU 메모리 사용량
+- **14B 모델**: 최소 24GB VRAM (단일 GPU)
+- **분산 처리**: 2개 이상 GPU 권장 (각 12GB+)
+- **배치 처리**: CPU 메모리 8GB+ 권장
+
+### 처리 속도
+- **81프레임 (3.375초)**: 약 2-5분 (GPU 성능에 따라)
+- **배치 처리**: 병렬 처리로 전체 처리 시간 단축
+
+## 🛠️ 문제 해결
+
+### 메모리 부족
+```bash
+# 다중 GPU 환경 설정
+torchrun --nproc-per-node=4 vace/vace_pipeline.py \
+    --dit_fsdp --t5_fsdp \
+    --ulysses_size 4 --ring_size 1
+```
+
+### 프레임 불일치
+```bash
+# 영상을 정확히 81프레임으로 분할 및 패딩
+python video_splitter.py input_video.mov -o ./inputs/
+```
+
+### 한글 파일명 문제
+```bash
+# 파일명을 영문으로 변환 후 처리
+for file in *.mov; do
+    # ... 파일명 변환 스크립트
+done
+```
+
+## 📋 TODO 및 개발 계획
+
+### 높은 우선순위
+- [ ] **영상 캡셔닝 도구**: 자동 프롬프트 생성
+- [ ] **신별 영상 분할 개선**: 현재 불완전한 분할 로직 보완
+- [ ] **UI 통합**: 전처리와 추론 UI 합병
+
+### 중간 우선순위  
+- [ ] **Video Interpolation**: 81프레임 제약 해결
+- [ ] **모델 최적화**: 메모리 사용량 최적화
+- [ ] **결과물 품질 개선**: 일관성 유지 알고리즘
+
+## 📖 추가 정보
+
+### 원본 VACE 프로젝트
+자세한 VACE 모델 정보 및 다른 기능들은 [원본 VACE 프로젝트](https://github.com/ali-vilab/VACE)를 참조하세요.
+
+### 라이선스
+본 프로젝트는 Apache License 2.0 하에 배포됩니다.
+
+### 기여
+버그 리포트, 기능 제안, 풀 리퀘스트를 환영합니다.
+
+## 🚨 주의사항
+
+1. **GPU 메모리**: 24GB 이상의 VRAM을 권장합니다
+2. **영상 길이**: 3초 이하의 영상으로 분할하여 처리하세요
+3. **파일명**: 영문 파일명을 사용하세요
+4. **분산 처리**: 메모리 부족 시 다중 GPU 환경을 구성하세요
+
+---
+
+문의사항이나 이슈가 있으시면 GitHub Issues를 통해 제보해 주세요.
