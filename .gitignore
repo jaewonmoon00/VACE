@@ -22,12 +22,13 @@ benchmarks/VACE-Benchmark/
 models/VACE-Annotators/
 models/VACE-LTX-Video-0.9/  
 models/Wan2.1-VACE-14B/
-models/_VACE-Wan2.1-1.3B-Preview/
+models/Wan2.1-VACE-1.3B/
 # Processing directories
 inputs/
 processed/
 results/
 pre_processed_files/
+demo_videos/
 # Gradio cache
 .gradio/
 EOF
