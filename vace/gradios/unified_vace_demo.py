@@ -9,10 +9,36 @@ from pathlib import Path
 import subprocess
 import torch
 import shutil
+import logging
 
 # 경로 추가
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+
+# 🆕 비디오 캡셔닝 모듈 import
+try:
+    from vace.annotators.video_captioning import VideoCaptioning
+    CAPTIONING_AVAILABLE = True
+    print("✅ Video captioning feature enabled")
+except ImportError as e:
+    print(f"⚠️ Video captioning not available: {e}")
+    print("💡 To enable: pip install transformers torch torchvision")
+    CAPTIONING_AVAILABLE = False
+
+
+class FixedSizeQueue:
+    def __init__(self, max_size):
+        self.max_size = max_size
+        self.queue = []
+    def add(self, item):
+        self.queue.insert(0, item)
+        if len(self.queue) > self.max_size:
+            self.queue.pop()
+    def get(self):
+        return self.queue
+    def __repr__(self):
+        return str(self.queue)
+
 
 class UnifiedVACEDemo:
     def __init__(self, cfg):
@@ -20,6 +46,21 @@ class UnifiedVACEDemo:
         self.batch_stop_flag = False
         self.batch_thread = None
         
+        # 🆕 비디오 캡셔닝 모듈 초기화
+        self.video_captioner = None
+        if CAPTIONING_AVAILABLE:
+            self._init_video_captioning()
+        
+    def _init_video_captioning(self):
+        """비디오 캡셔닝 모듈 초기화"""
+        try:
+            # 기본적으로 BLIP-2 사용 (로컬 처리)
+            self.video_captioner = VideoCaptioning(method="blip2", device="auto")
+            logging.info("Video captioning module initialized successfully")
+        except Exception as e:
+            logging.warning(f"Failed to initialize video captioning: {e}")
+            self.video_captioner = None
+            
     def create_ui(self):
         with gr.Blocks(title="Video Extender") as demo:
             gr.Markdown("""
@@ -51,7 +92,7 @@ class UnifiedVACEDemo:
         return demo
     
     def create_pipeline_ui(self):
-        """기본 파이프라인 UI"""
+        """기본 파이프라인 UI - 자동 캡셔닝 기능 포함"""
         gr.Markdown("### 🎬 Video Extension")
         gr.Markdown("Upload a video and extend it with AI-powered outpainting")
     
@@ -59,6 +100,38 @@ class UnifiedVACEDemo:
             with gr.Column():
                 # 입력
                 self.pipeline_video = gr.Video(label="Input Video")
+                
+                # 🆕 자동 캡셔닝 섹션 추가
+                if CAPTIONING_AVAILABLE:
+                    with gr.Accordion("🎬 Auto Captioning", open=False):
+                        with gr.Row():
+                            self.pipeline_auto_caption_btn = gr.Button(
+                                "🎬 Generate Caption", 
+                                variant="secondary",
+                                scale=2
+                            )
+                            self.pipeline_caption_method = gr.Dropdown(
+                                choices=["BLIP-2 (Local)", "GPT-4V (API)"],
+                                value="BLIP-2 (Local)",
+                                label="Method",
+                                scale=3
+                            )
+                        
+                        # API 키 입력 (조건부 표시)
+                        self.pipeline_api_key = gr.Textbox(
+                            label="OpenAI API Key (for GPT-4V)",
+                            type="password",
+                            placeholder="sk-...",
+                            visible=False
+                        )
+                        
+                        # 캡셔닝 상태 표시
+                        self.pipeline_caption_status = gr.Textbox(
+                            label="Caption Status",
+                            value="Ready to generate caption",
+                            interactive=False,
+                            max_lines=2
+                        )
                 
                 # 기본 설정
                 with gr.Accordion("Extension Settings", open=True):
@@ -72,9 +145,10 @@ class UnifiedVACEDemo:
                         label="Extension Ratio"
                     )
                     self.pipeline_prompt = gr.Textbox(
-                        label="Description (Optional)",
-                        placeholder="Describe what you want to see in the extended areas...",
-                        lines=2
+                        label="Description",
+                        placeholder="Describe what you want to see in the extended areas... (Use Auto Caption to generate automatically)",
+                        lines=3,
+                        info="💡 Tip: Use the Auto Caption feature above to automatically generate descriptions!"
                     )
                 
                 # 모델 선택
@@ -119,6 +193,32 @@ class UnifiedVACEDemo:
                     placeholder="Ready to process..."
                 )
                 self.pipeline_result_video = gr.Video(label="Extended Video")
+        
+        # 🆕 이벤트 핸들러 설정
+        if CAPTIONING_AVAILABLE:
+            # 캡션 방법 변경시 API 키 필드 표시/숨김
+            def toggle_api_key_visibility(caption_method):
+                return gr.update(visible="GPT-4V" in caption_method)
+            
+            self.pipeline_caption_method.change(
+                toggle_api_key_visibility,
+                inputs=[self.pipeline_caption_method],
+                outputs=[self.pipeline_api_key]
+            )
+            
+            # 자동 캡셔닝 버튼 클릭 이벤트
+            self.pipeline_auto_caption_btn.click(
+                self.generate_auto_caption,
+                inputs=[
+                    self.pipeline_video,
+                    self.pipeline_caption_method,
+                    self.pipeline_api_key
+                ],
+                outputs=[
+                    self.pipeline_prompt,
+                    self.pipeline_caption_status
+                ]
+            )
         
         # 모델 변경 시 해상도 옵션 업데이트
         def update_size_options(model_choice):
@@ -239,7 +339,7 @@ class UnifiedVACEDemo:
         )
 
     def create_sequential_ui(self):
-        """순차적 영상 확장 UI"""
+        """순차적 영상 확장 UI - 캡셔닝 기능 포함"""
         gr.Markdown("### 🔗 Sequential Video Extension")
         gr.Markdown("""
         **Purpose**: Create longer videos by processing them in segments with seamless transitions.
@@ -257,6 +357,21 @@ class UnifiedVACEDemo:
                     self.seq_current_video = gr.Video(label="Current Segment Video")
                     self.seq_previous_video = gr.Video(label="Previous Segment Result")
                     
+                    # 🆕 자동 캡셔닝 추가
+                    if CAPTIONING_AVAILABLE:
+                        with gr.Row():
+                            self.seq_auto_caption_btn = gr.Button(
+                                "🎬 Caption Current", 
+                                variant="secondary",
+                                scale=2
+                            )
+                            self.seq_caption_method = gr.Dropdown(
+                                choices=["BLIP-2 (Local)", "GPT-4V (API)"],
+                                value="BLIP-2 (Local)",
+                                label="Method",
+                                scale=2
+                            )
+                
                 # 연결 설정
                 with gr.Accordion("Sequence Settings", open=True):
                     self.seq_front_frames = gr.Slider(
@@ -272,8 +387,8 @@ class UnifiedVACEDemo:
                 with gr.Accordion("Generation Settings", open=True):
                     self.seq_prompt = gr.Textbox(
                         label="Description",
-                        placeholder="Describe the content for this segment...",
-                        lines=2
+                        placeholder="Describe the content for this segment... (or use Auto Caption)",
+                        lines=3
                     )
                     self.seq_model = gr.Dropdown(
                         choices=["14B", "1.3B"],
@@ -321,6 +436,21 @@ class UnifiedVACEDemo:
                 **Tip**: Use this for creating videos longer than 81 frames (3.4 seconds at 24fps)
                 """)
 
+        # 순차 확장용 캡셔닝 이벤트
+        if CAPTIONING_AVAILABLE:
+            self.seq_auto_caption_btn.click(
+                self.generate_auto_caption,
+                inputs=[
+                    self.seq_current_video,
+                    self.seq_caption_method,
+                    self.pipeline_api_key  # API 키 공유
+                ],
+                outputs=[
+                    self.seq_prompt,
+                    self.pipeline_caption_status  # 상태 공유
+                ]
+            )
+
         # 모델 변경 시 해상도 업데이트
         def update_seq_size_options(model_choice):
             if model_choice == "14B":
@@ -348,7 +478,7 @@ class UnifiedVACEDemo:
         )
 
     def create_partial_ui(self):
-        """부분 재생성 UI"""
+        """부분 재생성 UI - 캡셔닝 기능 포함"""
         gr.Markdown("### 🎯 Partial Video Regeneration") 
         gr.Markdown("""
         **Purpose**: Keep the good parts of a video and regenerate only the unsatisfactory portions.
@@ -365,6 +495,21 @@ class UnifiedVACEDemo:
                 with gr.Accordion("Input Settings", open=True):
                     self.partial_source_video = gr.Video(label="Source Video (to fix)")
                     
+                    # 🆕 자동 캡셔닝 추가
+                    if CAPTIONING_AVAILABLE:
+                        with gr.Row():
+                            self.partial_auto_caption_btn = gr.Button(
+                                "🎬 Caption Source", 
+                                variant="secondary",
+                                scale=2
+                            )
+                            self.partial_caption_method = gr.Dropdown(
+                                choices=["BLIP-2 (Local)", "GPT-4V (API)"],
+                                value="BLIP-2 (Local)",
+                                label="Method",
+                                scale=2
+                            )
+                
                 # 가이드 설정
                 with gr.Accordion("Guidance Settings", open=True):
                     self.partial_guide_duration = gr.Slider(
@@ -380,8 +525,8 @@ class UnifiedVACEDemo:
                 with gr.Accordion("Regeneration Settings", open=True):
                     self.partial_prompt = gr.Textbox(
                         label="New Description",
-                        placeholder="Describe what you want in the regenerated portion...",
-                        lines=2
+                        placeholder="Describe what you want in the regenerated portion... (or use Auto Caption)",
+                        lines=3
                     )
                     self.partial_model = gr.Dropdown(
                         choices=["14B", "1.3B"],
@@ -427,6 +572,21 @@ class UnifiedVACEDemo:
                 
                 **Example**: 2.6s × 24fps = 62 guide frames + 19 new frames
                 """)
+
+        # 부분 재생성용 캡셔닝 이벤트
+        if CAPTIONING_AVAILABLE:
+            self.partial_auto_caption_btn.click(
+                self.generate_auto_caption,
+                inputs=[
+                    self.partial_source_video,
+                    self.partial_caption_method,
+                    self.pipeline_api_key  # API 키 공유
+                ],
+                outputs=[
+                    self.partial_prompt,
+                    self.pipeline_caption_status  # 상태 공유
+                ]
+            )
 
         # 가이드 시간/FPS 변경 시 프레임 정보 업데이트
         def update_frame_info(duration, fps):
@@ -480,6 +640,56 @@ class UnifiedVACEDemo:
             ],
             outputs=[self.partial_progress, self.partial_result_video]
         )
+
+    # 🆕 자동 캡셔닝 함수
+    def generate_auto_caption(self, video, caption_method, api_key):
+        """
+        자동 캡셔닝 함수
+        
+        Args:
+            video: 업로드된 비디오 파일
+            caption_method: 캡셔닝 방법
+            api_key: API 키 (필요시)
+            
+        Returns:
+            tuple: (생성된 캡션, 상태 메시지)
+        """
+        try:
+            if not video:
+                return "", "⚠️ Please upload a video first!"
+            
+            if not self.video_captioner:
+                return "", "❌ Video captioning not available. Please check installation."
+            
+            # 진행 상태 표시
+            status_msg = f"🔄 Generating caption with {caption_method}..."
+            
+            # 캡션 방법에 따라 설정
+            if "BLIP-2" in caption_method:
+                self.video_captioner.method = "blip2"
+                caption = self.video_captioner.caption_video(video)
+                
+            elif "GPT-4V" in caption_method:
+                if not api_key or not api_key.startswith("sk-"):
+                    return "", "⚠️ Please provide a valid OpenAI API key for GPT-4V!"
+                
+                self.video_captioner.method = "gpt4v"
+                caption = self.video_captioner.caption_video(video, api_key=api_key)
+                
+            else:
+                return "", "❌ Unknown captioning method!"
+            
+            # 결과 확인
+            if caption.startswith(("Error:", "Failed", "GPT-4V API error:")):
+                return "", f"❌ {caption}"
+            
+            success_msg = f"✅ Caption generated successfully with {caption_method}"
+            return caption, success_msg
+            
+        except Exception as e:
+            error_msg = f"❌ Error generating caption: {str(e)}"
+            logging.error(error_msg)
+            return "", error_msg
 
     def _map_model_name(self, model_choice):
         """모델 선택을 실제 모델명으로 매핑"""
@@ -984,6 +1194,13 @@ class UnifiedVACEDemo:
 
 if __name__ == "__main__":
     import argparse
+    
+    # 캡셔닝 기능 상태 출력
+    if CAPTIONING_AVAILABLE:
+        print("✅ Video captioning feature enabled")
+    else:
+        print("⚠️ Video captioning feature disabled")
+        print("💡 To enable: pip install transformers torch torchvision")
     
     parser = argparse.ArgumentParser()
     parser.add_argument('--server_port', type=int, default=7860)
