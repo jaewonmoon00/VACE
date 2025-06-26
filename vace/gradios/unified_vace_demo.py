@@ -47,11 +47,122 @@ class UnifiedVACEDemo:
         self.batch_stop_flag = False
         self.batch_thread = None
         
+        # 🆕 GPU 정보 감지
+        self.available_gpus = self._detect_gpus()
+        print(f"🔍 Detected GPUs: {self.available_gpus}")
+        
         # 🆕 비디오 캡셔닝 모듈 초기화
         self.video_captioner = None
         if CAPTIONING_AVAILABLE:
             self._init_video_captioning()
+    
+    def _detect_gpus(self):
+        """사용 가능한 GPU 감지"""
+        gpu_info = []
+        try:
+            if torch.cuda.is_available():
+                gpu_count = torch.cuda.device_count()
+                for i in range(gpu_count):
+                    gpu_name = torch.cuda.get_device_name(i)
+                    memory = torch.cuda.get_device_properties(i).total_memory // (1024**3)  # GB
+                    gpu_info.append({
+                        'id': i,
+                        'name': gpu_name,
+                        'memory': memory
+                    })
+            else:
+                gpu_info.append({'id': -1, 'name': 'CPU Only', 'memory': 0})
+        except Exception as e:
+            print(f"GPU detection error: {e}")
+            gpu_info.append({'id': -1, 'name': 'CPU Only', 'memory': 0})
         
+        return gpu_info
+    
+    def _get_gpu_choices(self):
+        """GPU 선택 옵션 생성"""
+        choices = []
+        if len(self.available_gpus) > 1 and self.available_gpus[0]['id'] != -1:
+            # 다중 GPU 옵션
+            choices.append("Auto (All Available GPUs)")
+            choices.append("Multi-GPU (Custom)")
+            choices.append("---")  # 구분선
+        
+        # 개별 GPU 옵션
+        for gpu in self.available_gpus:
+            if gpu['id'] == -1:
+                choices.append("CPU Only")
+            else:
+                choices.append(f"GPU {gpu['id']}: {gpu['name']} ({gpu['memory']}GB)")
+        
+        return choices
+    
+    def _parse_gpu_selection(self, gpu_choice):
+        """GPU 선택 파싱"""
+        if gpu_choice == "Auto (All Available GPUs)":
+            return "auto", None
+        elif gpu_choice == "Multi-GPU (Custom)":
+            return "multi", None
+        elif gpu_choice == "CPU Only":
+            return "cpu", None
+        elif gpu_choice.startswith("GPU "):
+            gpu_id = int(gpu_choice.split(":")[0].split()[1])
+            return "single", gpu_id
+        else:
+            return "auto", None
+    
+    def _get_execution_config(self, gpu_mode, gpu_id, custom_gpu_ids=None):
+        """실행 설정 생성"""
+        config = {
+            'env': {},
+            'nproc_per_node': 1,
+            'use_torchrun': False,
+            'cuda_visible_devices': None
+        }
+        
+        if gpu_mode == "single" and gpu_id is not None:
+            # 단일 GPU 실행
+            config['cuda_visible_devices'] = str(gpu_id)
+            config['nproc_per_node'] = 1
+            config['use_torchrun'] = False
+            config['env']['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
+            
+        elif gpu_mode == "multi":
+            # 다중 GPU 실행
+            if custom_gpu_ids:
+                gpu_list = [str(i) for i in custom_gpu_ids]
+                config['cuda_visible_devices'] = ','.join(gpu_list)
+                config['nproc_per_node'] = len(custom_gpu_ids)
+                config['env']['CUDA_VISIBLE_DEVICES'] = ','.join(gpu_list)
+            else:
+                # 모든 GPU 사용
+                gpu_list = [str(gpu['id']) for gpu in self.available_gpus if gpu['id'] != -1]
+                config['cuda_visible_devices'] = ','.join(gpu_list)
+                config['nproc_per_node'] = len(gpu_list)
+                if gpu_list:
+                    config['env']['CUDA_VISIBLE_DEVICES'] = ','.join(gpu_list)
+            
+            config['use_torchrun'] = config['nproc_per_node'] > 1
+            
+        elif gpu_mode == "auto":
+            # 자동 선택 (기존 로직)
+            available_gpu_count = len([g for g in self.available_gpus if g['id'] != -1])
+            if available_gpu_count > 1:
+                config['nproc_per_node'] = min(available_gpu_count, 2)
+                config['use_torchrun'] = True
+            else:
+                config['nproc_per_node'] = 1
+                config['use_torchrun'] = False
+                if available_gpu_count == 1:
+                    config['env']['CUDA_VISIBLE_DEVICES'] = '0'
+        
+        elif gpu_mode == "cpu":
+            # CPU 전용
+            config['env']['CUDA_VISIBLE_DEVICES'] = ""
+            config['nproc_per_node'] = 1
+            config['use_torchrun'] = False
+        
+        return config
+
     def _init_video_captioning(self):
         """비디오 캡셔닝 모듈 초기화"""
         try:
@@ -82,6 +193,57 @@ class UnifiedVACEDemo:
     def randomize_batch_seed(self):
         """배치 처리용 시드 랜덤화"""
         return self.generate_random_seed()
+
+    def create_gpu_settings_ui(self, tab_prefix=""):
+        """GPU 설정 UI 컴포넌트 생성"""
+        gpu_choices = self._get_gpu_choices()
+        
+        with gr.Accordion("🎛️ GPU Settings", open=False):
+            gpu_selection = gr.Dropdown(
+                choices=gpu_choices,
+                value=gpu_choices[0] if gpu_choices else "CPU Only",
+                label="GPU Selection",
+                elem_id=f"{tab_prefix}_gpu_selection"
+            )
+            
+            # 커스텀 다중 GPU 설정 (조건부 표시)
+            with gr.Row(visible=False) as custom_gpu_row:
+                custom_gpu_ids = gr.CheckboxGroup(
+                    choices=[f"GPU {gpu['id']}" for gpu in self.available_gpus if gpu['id'] != -1],
+                    label="Select GPUs for Multi-GPU",
+                    elem_id=f"{tab_prefix}_custom_gpu_ids"
+                )
+            
+            # GPU 정보 표시
+            gpu_info_text = self._format_gpu_info()
+            gpu_info = gr.Markdown(
+                value=gpu_info_text,
+                label="Available GPUs"
+            )
+            
+            # GPU 선택 변경 시 커스텀 설정 표시/숨김
+            def toggle_custom_gpu_visibility(gpu_choice):
+                return gr.update(visible=(gpu_choice == "Multi-GPU (Custom)"))
+            
+            gpu_selection.change(
+                toggle_custom_gpu_visibility,
+                inputs=[gpu_selection],
+                outputs=[custom_gpu_row]
+            )
+        
+        return gpu_selection, custom_gpu_ids
+    
+    def _format_gpu_info(self):
+        """GPU 정보 포맷팅"""
+        if not self.available_gpus or self.available_gpus[0]['id'] == -1:
+            return "**Available Hardware:** CPU Only"
+        
+        info_lines = ["**Available GPUs:**"]
+        for gpu in self.available_gpus:
+            if gpu['id'] != -1:
+                info_lines.append(f"- **GPU {gpu['id']}:** {gpu['name']} ({gpu['memory']}GB)")
+        
+        return "\n".join(info_lines)
             
     def create_ui(self):
         with gr.Blocks(title="Video Extender") as demo:
@@ -114,7 +276,7 @@ class UnifiedVACEDemo:
         return demo
     
     def create_pipeline_ui(self):
-        """기본 파이프라인 UI - 자동 캡셔닝 기능 포함"""
+        """기본 파이프라인 UI - GPU 설정 포함"""
         gr.Markdown("### 🎬 Video Extension")
         gr.Markdown("Upload a video and extend it with AI-powered outpainting")
     
@@ -122,6 +284,9 @@ class UnifiedVACEDemo:
             with gr.Column():
                 # 입력
                 self.pipeline_video = gr.Video(label="Input Video")
+                
+                # 🆕 GPU 설정 추가
+                self.pipeline_gpu_selection, self.pipeline_custom_gpu_ids = self.create_gpu_settings_ui("pipeline")
                 
                 # 🆕 자동 캡셔닝 섹션 추가
                 if CAPTIONING_AVAILABLE:
@@ -282,7 +447,8 @@ class UnifiedVACEDemo:
                 self.pipeline_video, self.pipeline_direction, self.pipeline_expand_ratio,
                 self.pipeline_prompt, self.pipeline_use_prompt_extend,
                 self.pipeline_seed, self.pipeline_model, self.pipeline_size,
-                self.pipeline_sampling_steps, self.pipeline_guide_scale
+                self.pipeline_sampling_steps, self.pipeline_guide_scale,
+                self.pipeline_gpu_selection, self.pipeline_custom_gpu_ids  # 🆕 GPU 설정 추가
             ],
             outputs=[
                 self.pipeline_progress, self.pipeline_result_video
@@ -290,7 +456,7 @@ class UnifiedVACEDemo:
         )
     
     def create_batch_ui(self):
-        """배치 처리 UI"""
+        """배치 처리 UI - GPU 설정 포함"""
         gr.Markdown("### 📦 Batch Video Processing")
         gr.Markdown("Process multiple videos automatically.")
         
@@ -305,6 +471,9 @@ class UnifiedVACEDemo:
                     label="Prompt File (Optional)",
                     file_types=[".txt"]
                 )
+                
+                # 🆕 GPU 설정 추가
+                self.batch_gpu_selection, self.batch_custom_gpu_ids = self.create_gpu_settings_ui("batch")
                 
                 # 배치 설정
                 with gr.Accordion("Batch Settings", open=True):
@@ -391,7 +560,8 @@ class UnifiedVACEDemo:
             inputs=[
                 self.batch_input_dir, self.batch_prompt_file,
                 self.batch_direction, self.batch_expand_ratio, self.batch_model, self.batch_size,
-                self.batch_base_seed  # 🆕 배치 시드 추가
+                self.batch_base_seed,  # 🆕 배치 시드 추가
+                self.batch_gpu_selection, self.batch_custom_gpu_ids  # 🆕 GPU 설정 추가
             ],
             outputs=[self.batch_progress, self.batch_status]
         )
@@ -402,7 +572,7 @@ class UnifiedVACEDemo:
         )
 
     def create_sequential_ui(self):
-        """순차적 영상 확장 UI - 캡셔닝 기능 포함"""
+        """순차적 영상 확장 UI - GPU 설정 및 캡셔닝 기능 포함"""
         gr.Markdown("### 🔗 Sequential Video Extension")
         gr.Markdown("""
         **Purpose**: Create longer videos by processing them in segments with seamless transitions.
@@ -434,6 +604,9 @@ class UnifiedVACEDemo:
                                 label="Method",
                                 scale=2
                             )
+                
+                # 🆕 GPU 설정 추가
+                self.seq_gpu_selection, self.seq_custom_gpu_ids = self.create_gpu_settings_ui("seq")
                 
                 # 연결 설정
                 with gr.Accordion("Sequence Settings", open=True):
@@ -554,13 +727,14 @@ class UnifiedVACEDemo:
                 self.seq_current_video, self.seq_previous_video,
                 self.seq_front_frames, self.seq_insert_frames,
                 self.seq_prompt, self.seq_model, self.seq_size,
-                self.seq_seed, self.seq_sampling_steps, self.seq_guide_scale
+                self.seq_seed, self.seq_sampling_steps, self.seq_guide_scale,
+                self.seq_gpu_selection, self.seq_custom_gpu_ids  # 🆕 GPU 설정 추가
             ],
             outputs=[self.seq_progress, self.seq_result_video]
         )
 
     def create_partial_ui(self):
-        """부분 재생성 UI - 캡셔닝 기능 포함"""
+        """부분 재생성 UI - GPU 설정 및 캡셔닝 기능 포함"""
         gr.Markdown("### 🎯 Partial Video Regeneration") 
         gr.Markdown("""
         **Purpose**: Keep the good parts of a video and regenerate only the unsatisfactory portions.
@@ -591,6 +765,9 @@ class UnifiedVACEDemo:
                                 label="Method",
                                 scale=2
                             )
+                
+                # 🆕 GPU 설정 추가
+                self.partial_gpu_selection, self.partial_custom_gpu_ids = self.create_gpu_settings_ui("partial")
                 
                 # 가이드 설정
                 with gr.Accordion("Guidance Settings", open=True):
@@ -737,7 +914,8 @@ class UnifiedVACEDemo:
             inputs=[
                 self.partial_source_video, self.partial_guide_duration, self.partial_target_fps,
                 self.partial_prompt, self.partial_model, self.partial_size,
-                self.partial_seed, self.partial_sampling_steps, self.partial_guide_scale
+                self.partial_seed, self.partial_sampling_steps, self.partial_guide_scale,
+                self.partial_gpu_selection, self.partial_custom_gpu_ids  # 🆕 GPU 설정 추가
             ],
             outputs=[self.partial_progress, self.partial_result_video]
         )
@@ -810,8 +988,9 @@ class UnifiedVACEDemo:
         return mapping.get(extension_mode, "plain")
 
     def run_full_pipeline(self, video, direction, expand_ratio, prompt, use_prompt_extend, 
-                         seed, model_choice, size, sampling_steps, guide_scale):
-        """전체 파이프라인 실행"""
+                         seed, model_choice, size, sampling_steps, guide_scale, 
+                         gpu_selection, custom_gpu_ids):
+        """전체 파이프라인 실행 - GPU 설정 포함"""
         try:
             if not video:
                 yield "❌ Please upload a video first!", None
@@ -820,6 +999,19 @@ class UnifiedVACEDemo:
             model_name = self._map_model_name(model_choice)
             prompt_extend = self._map_prompt_extension(use_prompt_extend)
             task = "outpainting"
+
+            # 🆕 GPU 설정 파싱
+            gpu_mode, gpu_id = self._parse_gpu_selection(gpu_selection)
+            
+            # 커스텀 다중 GPU 처리
+            selected_gpu_ids = None
+            if gpu_mode == "multi" and custom_gpu_ids:
+                selected_gpu_ids = [int(gpu.split()[1]) for gpu in custom_gpu_ids]
+            
+            # 실행 설정 생성
+            exec_config = self._get_execution_config(gpu_mode, gpu_id, selected_gpu_ids)
+            
+            yield f"🔧 GPU Config: {gpu_selection} | Mode: {gpu_mode} | GPUs: {exec_config.get('cuda_visible_devices', 'Auto')}", None
 
             # 파라미터 처리
             try:
@@ -862,10 +1054,6 @@ class UnifiedVACEDemo:
             }
             ckpt_dir = ckpt_dir_map.get(model_name, "models/Wan2.1-VACE-14B")
 
-            # GPU 설정
-            gpu_count = torch.cuda.device_count() if torch.cuda.is_available() else 1
-            nproc_per_node = min(gpu_count, 2)
-
             # 1. Preprocess 단계
             preprocess_cmd = [
                 'python', 'vace/vace_preproccess.py',
@@ -877,11 +1065,16 @@ class UnifiedVACEDemo:
             ]
             yield "🔄 Preparing video...", None
             try:
+                # 환경변수 적용
+                preprocess_env = os.environ.copy()
+                preprocess_env.update(exec_config['env'])
+                
                 result = subprocess.run(
                     preprocess_cmd,
                     capture_output=True,
                     text=True,
-                    cwd=vace_root_dir
+                    cwd=vace_root_dir,
+                    env=preprocess_env
                 )
                 if result.returncode != 0:
                     error_msg = result.stderr if result.stderr else result.stdout
@@ -895,9 +1088,8 @@ class UnifiedVACEDemo:
             src_video_path = os.path.join(pre_save_dir, f"src_video-{task}.mp4")
             src_mask_path = os.path.join(pre_save_dir, f"src_mask-{task}.mp4")
 
-            inference_cmd = [
-                'torchrun',
-                f'--nproc-per-node={nproc_per_node}',
+            # 기본 추론 명령어
+            base_inference_cmd = [
                 'vace/vace_wan_inference.py',
                 '--src_video', src_video_path,
                 '--src_mask', src_mask_path,
@@ -909,13 +1101,27 @@ class UnifiedVACEDemo:
                 '--sample_guide_scale', str(guide_scale),
                 '--save_dir', result_save_dir
             ]
-            if nproc_per_node > 1:
-                inference_cmd.extend([
-                    '--dit_fsdp',
-                    '--t5_fsdp',
-                    '--ulysses_size', str(nproc_per_node),
-                    '--ring_size', '1'
-                ])
+            
+            # 🆕 GPU 설정에 따른 명령어 구성
+            if exec_config['use_torchrun']:
+                inference_cmd = [
+                    'torchrun',
+                    f'--nproc-per-node={exec_config["nproc_per_node"]}',
+                    '--master_port=12355'
+                ] + base_inference_cmd
+                
+                # 다중 GPU 최적화 옵션
+                if exec_config['nproc_per_node'] > 1:
+                    inference_cmd.extend([
+                        '--dit_fsdp',
+                        '--t5_fsdp',
+                        '--ulysses_size', str(exec_config['nproc_per_node']),
+                        '--ring_size', '1'
+                    ])
+            else:
+                # 단일 GPU 또는 CPU 실행
+                inference_cmd = ['python'] + base_inference_cmd
+                
             if prompt and prompt.strip():
                 inference_cmd.extend(['--prompt', str(prompt)])
             else:
@@ -923,13 +1129,18 @@ class UnifiedVACEDemo:
             if prompt_extend != 'plain':
                 inference_cmd.extend(['--use_prompt_extend', str(prompt_extend)])
 
-            yield "🚀 Extending video...", None
+            yield f"🚀 Extending video with {gpu_selection}...", None
             try:
+                # 환경변수 적용
+                inference_env = os.environ.copy()
+                inference_env.update(exec_config['env'])
+                
                 result = subprocess.run(
                     inference_cmd,
                     capture_output=True,
                     text=True,
-                    cwd=vace_root_dir
+                    cwd=vace_root_dir,
+                    env=inference_env
                 )
                 if result.returncode == 0:
                     out_video_path = os.path.join(result_save_dir, 'out_video.mp4')
@@ -946,8 +1157,9 @@ class UnifiedVACEDemo:
             yield f"❌ Error: {str(e)}", None
 
     def run_sequential_extension(self, current_video, previous_video, front_frames, insert_frames,
-                                prompt, model_choice, size, seed, sampling_steps, guide_scale):
-        """순차적 영상 확장 실행"""
+                                prompt, model_choice, size, seed, sampling_steps, guide_scale,
+                                gpu_selection, custom_gpu_ids):
+        """순차적 영상 확장 실행 - GPU 설정 포함"""
         try:
             if not current_video:
                 yield "❌ Please upload a current segment video!", None
@@ -958,6 +1170,15 @@ class UnifiedVACEDemo:
                 return
 
             model_name = self._map_model_name(model_choice)
+            
+            # 🆕 GPU 설정 파싱
+            gpu_mode, gpu_id = self._parse_gpu_selection(gpu_selection)
+            selected_gpu_ids = None
+            if gpu_mode == "multi" and custom_gpu_ids:
+                selected_gpu_ids = [int(gpu.split()[1]) for gpu in custom_gpu_ids]
+            exec_config = self._get_execution_config(gpu_mode, gpu_id, selected_gpu_ids)
+            
+            yield f"🔧 GPU Config: {gpu_selection} | Sequential processing...", None
             
             # 파라미터 검증
             try:
@@ -999,16 +1220,10 @@ class UnifiedVACEDemo:
             }
             ckpt_dir = ckpt_dir_map.get(model_name, "models/Wan2.1-VACE-14B")
 
-            # GPU 설정
-            gpu_count = torch.cuda.device_count() if torch.cuda.is_available() else 1
-            nproc_per_node = min(gpu_count, 2)
-
             yield "🔗 Processing sequential connection...", None
 
-            # 순차 연장용 추론 명령어
-            inference_cmd = [
-                'torchrun',
-                f'--nproc-per-node={nproc_per_node}',
+            # 순차 연장용 기본 명령어
+            base_inference_cmd = [
                 'vace/vace_wan_inference.py',
                 '--src_video', current_target,
                 '--base_seed', str(seed),
@@ -1025,23 +1240,38 @@ class UnifiedVACEDemo:
                 '--insert_frames', str(insert_frames)
             ]
             
-            if nproc_per_node > 1:
-                inference_cmd.extend([
-                    '--dit_fsdp',
-                    '--t5_fsdp', 
-                    '--ulysses_size', str(nproc_per_node),
-                    '--ring_size', '1'
-                ])
+            # 🆕 GPU 설정에 따른 명령어 구성
+            if exec_config['use_torchrun']:
+                inference_cmd = [
+                    'torchrun',
+                    f'--nproc-per-node={exec_config["nproc_per_node"]}',
+                    '--master_port=12355'
+                ] + base_inference_cmd
+                
+                if exec_config['nproc_per_node'] > 1:
+                    inference_cmd.extend([
+                        '--dit_fsdp',
+                        '--t5_fsdp', 
+                        '--ulysses_size', str(exec_config['nproc_per_node']),
+                        '--ring_size', '1'
+                    ])
+            else:
+                inference_cmd = ['python'] + base_inference_cmd
                 
             if prompt and prompt.strip():
                 inference_cmd.extend(['--prompt', str(prompt)])
 
             try:
+                # 환경변수 적용
+                inference_env = os.environ.copy()
+                inference_env.update(exec_config['env'])
+                
                 result = subprocess.run(
                     inference_cmd,
                     capture_output=True,
                     text=True,
-                    cwd=vace_root_dir
+                    cwd=vace_root_dir,
+                    env=inference_env
                 )
                 
                 if result.returncode == 0:
@@ -1060,14 +1290,22 @@ class UnifiedVACEDemo:
             yield f"❌ Error: {str(e)}", None
 
     def run_partial_regeneration(self, source_video, guide_duration, target_fps, prompt, 
-                               model_choice, size, seed, sampling_steps, guide_scale):
-        """부분 재생성 실행"""
+                               model_choice, size, seed, sampling_steps, guide_scale,
+                               gpu_selection, custom_gpu_ids):
+        """부분 재생성 실행 - GPU 설정 포함"""
         try:
             if not source_video:
                 yield "❌ Please upload a source video!", None
                 return
 
             model_name = self._map_model_name(model_choice)
+            
+            # 🆕 GPU 설정 파싱
+            gpu_mode, gpu_id = self._parse_gpu_selection(gpu_selection)
+            selected_gpu_ids = None
+            if gpu_mode == "multi" and custom_gpu_ids:
+                selected_gpu_ids = [int(gpu.split()[1]) for gpu in custom_gpu_ids]
+            exec_config = self._get_execution_config(gpu_mode, gpu_id, selected_gpu_ids)
             
             # 파라미터 검증
             try:
@@ -1088,7 +1326,7 @@ class UnifiedVACEDemo:
                 yield "❌ Guide duration too long! Must be shorter than total video length.", None
                 return
 
-            yield f"🔄 Preparing partial regeneration (guide: {guide_frames} frames)...", None
+            yield f"🔧 GPU: {gpu_selection} | Preparing partial regeneration (guide: {guide_frames} frames)...", None
 
             vace_root_dir = "/data/VACE"
             inputs_dir = os.path.join(vace_root_dir, "inputs")
@@ -1113,16 +1351,10 @@ class UnifiedVACEDemo:
             }
             ckpt_dir = ckpt_dir_map.get(model_name, "models/Wan2.1-VACE-14B")
 
-            # GPU 설정
-            gpu_count = torch.cuda.device_count() if torch.cuda.is_available() else 1
-            nproc_per_node = min(gpu_count, 2)
-
             yield f"🎯 Processing partial regeneration ({total_frames - guide_frames} new frames)...", None
 
-            # 부분 재생성용 추론 명령어
-            inference_cmd = [
-                'torchrun',
-                f'--nproc-per-node={nproc_per_node}',
+            # 부분 재생성용 기본 명령어
+            base_inference_cmd = [
                 'vace/vace_wan_inference.py',
                 '--src_video', source_target,
                 '--base_seed', str(seed),
@@ -1138,23 +1370,38 @@ class UnifiedVACEDemo:
                 '--target_fps', str(target_fps)
             ]
             
-            if nproc_per_node > 1:
-                inference_cmd.extend([
-                    '--dit_fsdp',
-                    '--t5_fsdp',
-                    '--ulysses_size', str(nproc_per_node),
-                    '--ring_size', '1'
-                ])
+            # 🆕 GPU 설정에 따른 명령어 구성
+            if exec_config['use_torchrun']:
+                inference_cmd = [
+                    'torchrun',
+                    f'--nproc-per-node={exec_config["nproc_per_node"]}',
+                    '--master_port=12355'
+                ] + base_inference_cmd
+                
+                if exec_config['nproc_per_node'] > 1:
+                    inference_cmd.extend([
+                        '--dit_fsdp',
+                        '--t5_fsdp',
+                        '--ulysses_size', str(exec_config['nproc_per_node']),
+                        '--ring_size', '1'
+                    ])
+            else:
+                inference_cmd = ['python'] + base_inference_cmd
                 
             if prompt and prompt.strip():
                 inference_cmd.extend(['--prompt', str(prompt)])
 
             try:
+                # 환경변수 적용
+                inference_env = os.environ.copy()
+                inference_env.update(exec_config['env'])
+                
                 result = subprocess.run(
                     inference_cmd,
                     capture_output=True,
                     text=True,
-                    cwd=vace_root_dir
+                    cwd=vace_root_dir,
+                    env=inference_env
                 )
                 
                 if result.returncode == 0:
@@ -1173,15 +1420,17 @@ class UnifiedVACEDemo:
         except Exception as e:
             yield f"❌ Error: {str(e)}", None
     
-    def start_batch_processing(self, input_dir, prompt_file, direction, expand_ratio, model_choice, batch_size, base_seed):
-        """배치 처리 시작 - 베이스 시드 사용"""
+    def start_batch_processing(self, input_dir, prompt_file, direction, expand_ratio, model_choice, 
+                             batch_size, base_seed, gpu_selection, custom_gpu_ids):
+        """배치 처리 시작 - GPU 설정 포함"""
         if self.batch_thread and self.batch_thread.is_alive():
             return "⚠️ Batch processing is already running!", {"status": "running"}
         
         self.batch_stop_flag = False
         self.batch_thread = threading.Thread(
             target=self._batch_worker,
-            args=(input_dir, prompt_file, direction, expand_ratio, model_choice, batch_size, base_seed)
+            args=(input_dir, prompt_file, direction, expand_ratio, model_choice, batch_size, 
+                  base_seed, gpu_selection, custom_gpu_ids)
         )
         self.batch_thread.start()
         
@@ -1192,12 +1441,19 @@ class UnifiedVACEDemo:
         self.batch_stop_flag = True
         return "⏹️ Stopping batch processing..."
     
-    def _batch_worker(self, input_dir, prompt_file, direction, expand_ratio, model_choice, batch_size, base_seed):
-        """실제 배치 처리 워커 - 베이스 시드 활용"""
+    def _batch_worker(self, input_dir, prompt_file, direction, expand_ratio, model_choice, 
+                     batch_size, base_seed, gpu_selection, custom_gpu_ids):
+        """실제 배치 처리 워커 - GPU 설정 포함"""
         try:
-            # GPU 개수 확인
-            gpu_count = torch.cuda.device_count() if torch.cuda.is_available() else 1
-            nproc_per_node = min(gpu_count, 2)
+            # 🆕 GPU 설정 파싱
+            gpu_mode, gpu_id = self._parse_gpu_selection(gpu_selection)
+            selected_gpu_ids = None
+            if gpu_mode == "multi" and custom_gpu_ids:
+                selected_gpu_ids = [int(gpu.split()[1]) for gpu in custom_gpu_ids]
+            exec_config = self._get_execution_config(gpu_mode, gpu_id, selected_gpu_ids)
+            
+            print(f"🔧 Batch processing with GPU config: {gpu_selection}")
+            print(f"🔧 Execution config: nproc={exec_config['nproc_per_node']}, torchrun={exec_config['use_torchrun']}")
             
             # 모델 선택을 모델명으로 변환
             model_name = self._map_model_name(model_choice)
@@ -1250,10 +1506,8 @@ class UnifiedVACEDemo:
                 
                 print(f"🎬 Processing {filename} with {model_choice} model (seed: {current_seed})")
                 
-                # 명령어 구성
-                cmd = [
-                    'torchrun', 
-                    f'--nproc-per-node={nproc_per_node}',
+                # 🆕 GPU 설정에 따른 명령어 구성
+                base_cmd = [
                     'vace/vace_pipeline.py',
                     '--base', 'wan',
                     '--task', 'outpainting',
@@ -1261,7 +1515,7 @@ class UnifiedVACEDemo:
                     '--direction', ','.join(direction) if direction else 'left,right',
                     '--expand_ratio', str(expand_ratio),
                     '--prompt', prompt,
-                    '--base_seed', str(current_seed),  # 🆕 고유 시드 사용
+                    '--base_seed', str(current_seed),
                     '--model_name', model_name,
                     '--ckpt_dir', ckpt_dir,
                     '--size', str(batch_size),
@@ -1269,21 +1523,35 @@ class UnifiedVACEDemo:
                     '--sample_guide_scale', '5.0'
                 ]
                 
-                # 다중 GPU 최적화 옵션
-                if nproc_per_node > 1:
-                    cmd.extend([
-                        '--dit_fsdp',
-                        '--t5_fsdp',
-                        '--ulysses_size', str(nproc_per_node),
-                        '--ring_size', '1'
-                    ])
+                if exec_config['use_torchrun']:
+                    cmd = [
+                        'torchrun', 
+                        f'--nproc-per-node={exec_config["nproc_per_node"]}',
+                        '--master_port=12355'
+                    ] + base_cmd
+                    
+                    # 다중 GPU 최적화 옵션
+                    if exec_config['nproc_per_node'] > 1:
+                        cmd.extend([
+                            '--dit_fsdp',
+                            '--t5_fsdp',
+                            '--ulysses_size', str(exec_config['nproc_per_node']),
+                            '--ring_size', '1'
+                        ])
+                else:
+                    cmd = ['python'] + base_cmd
                 
                 try:
+                    # 환경변수 적용
+                    batch_env = os.environ.copy()
+                    batch_env.update(exec_config['env'])
+                    
                     result = subprocess.run(
                         cmd,
                         capture_output=True,
                         text=True,
-                        cwd="/data/VACE"
+                        cwd="/data/VACE",
+                        env=batch_env
                     )
                     
                     if result.returncode == 0:
