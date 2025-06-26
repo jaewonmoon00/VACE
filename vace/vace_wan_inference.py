@@ -181,8 +181,7 @@ def get_parser():
     parser.add_argument(
         "--src_video",
         type=str,
-        # default=None,  # [수정] 기존값
-        required=True,  # [수정] 2025-06-26: src_video를 필수 파라미터로 변경
+        default=None,
         help="The file of the source video. Default None.")
     parser.add_argument(
         "--src_mask",
@@ -349,6 +348,7 @@ def main(args):
         args.base_seed = base_seed[0]
 
     if args.prompt is None:
+        
         args.prompt = EXAMPLE_PROMPT[args.model_name]["prompt"]
         args.src_video = EXAMPLE_PROMPT[args.model_name].get("src_video", None)
         args.src_mask = EXAMPLE_PROMPT[args.model_name].get("src_mask", None)

@@ -27,20 +27,6 @@ except ImportError as e:
     CAPTIONING_AVAILABLE = False
 
 
-class FixedSizeQueue:
-    def __init__(self, max_size):
-        self.max_size = max_size
-        self.queue = []
-    def add(self, item):
-        self.queue.insert(0, item)
-        if len(self.queue) > self.max_size:
-            self.queue.pop()
-    def get(self):
-        return self.queue
-    def __repr__(self):
-        return str(self.queue)
-
-
 class UnifiedVACEDemo:
     def __init__(self, cfg):
         self.cfg = cfg
@@ -293,7 +279,7 @@ class UnifiedVACEDemo:
                     with gr.Accordion("🎬 Auto Captioning", open=False):
                         with gr.Row():
                             self.pipeline_auto_caption_btn = gr.Button(
-                                "🎬 Generate Caption", 
+                                "🎬 Generate Caption",
                                 variant="secondary",
                                 scale=2
                             )
@@ -771,13 +757,17 @@ class UnifiedVACEDemo:
                 
                 # 가이드 설정
                 with gr.Accordion("Guidance Settings", open=True):
-                    self.partial_guide_duration = gr.Slider(
-                        minimum=0.5, maximum=5.0, value=2.6, step=0.1,
-                        label="Guide Duration (seconds)"
-                    )
                     self.partial_target_fps = gr.Slider(
                         minimum=16, maximum=30, value=24, step=2,
                         label="Target FPS"
+                    )
+                    self.partial_guide_duration = gr.Slider(
+                        minimum=1/24,  # 1 frame at 24fps
+                        maximum=5.0, 
+                        value=2.6, 
+                        step=1/24,
+                        label="Guide Duration (seconds)",
+                        info="Minimum: 1 frame, adjusts automatically with FPS"
                     )
                     
                 # 재생성 설정  
@@ -785,7 +775,8 @@ class UnifiedVACEDemo:
                     self.partial_prompt = gr.Textbox(
                         label="New Description",
                         placeholder="Describe what you want in the regenerated portion... (or use Auto Caption)",
-                        lines=3
+                        lines=3,
+                        value="",
                     )
                     self.partial_model = gr.Dropdown(
                         choices=["14B", "1.3B"],
@@ -868,17 +859,20 @@ class UnifiedVACEDemo:
 
         # 가이드 시간/FPS 변경 시 프레임 정보 업데이트
         def update_frame_info(duration, fps):
+            """프레임 정보 업데이트"""
             guide_frames = int(duration * fps)
-            total_frames = 81  # VACE 기본값
+            total_frames = 81
             regen_frames = max(0, total_frames - guide_frames)
+            
+            status = "✅ Valid" if 1 <= guide_frames <= 80 else "⚠️ Invalid"
             
             info = f"""
             ### 📊 Frame Calculation:
-            - **Guide frames**: {guide_frames} frames ({duration}s × {fps}fps)
+            - **Guide frames**: {guide_frames} frames ({duration:.3f}s × {fps}fps)
             - **Regeneration frames**: {regen_frames} frames 
             - **Total frames**: {total_frames} frames
             
-            **Status**: {'✅ Valid' if regen_frames > 0 else '⚠️ Guide too long'}
+            **Status**: {status}
             """
             return info
         
@@ -889,7 +883,19 @@ class UnifiedVACEDemo:
             elif model_choice == "1.3B":
                 return gr.update(choices=["480p", "480×832", "832×480"], value="480p")
             return gr.update(choices=["720p", "480p"], value="720p")
-        
+        def update_guide_duration_range(fps):
+            """FPS 변경시 Guide Duration 범위와 스텝 업데이트"""
+            min_duration = 1 / fps      # 1 프레임
+            max_duration = 80 / fps     # 최대 80 프레임 (1프레임은 재생성용)
+            step_size = 1 / fps         # 1 프레임 단위 스텝
+            
+            return gr.update(
+                minimum=min_duration,
+                maximum=max_duration,
+                step=step_size,
+                value=min(max(min_duration, 2.6), max_duration),  # 현재 값 조정
+                info=f"Range: {min_duration:.3f}s - {max_duration:.3f}s (1-80 frames at {fps}fps)"
+            )
         # 이벤트 핸들러
         self.partial_guide_duration.change(
             update_frame_info,
@@ -897,6 +903,12 @@ class UnifiedVACEDemo:
             outputs=[self.partial_frame_info]
         )
         
+        self.partial_target_fps.change(
+            update_guide_duration_range,
+            inputs=[self.partial_target_fps],
+            outputs=[self.partial_guide_duration]
+        )
+
         self.partial_target_fps.change(
             update_frame_info,
             inputs=[self.partial_guide_duration, self.partial_target_fps],
@@ -1388,8 +1400,10 @@ class UnifiedVACEDemo:
             else:
                 inference_cmd = ['python'] + base_inference_cmd
                 
-            if prompt and prompt.strip():
+            if prompt:
                 inference_cmd.extend(['--prompt', str(prompt)])
+            else:
+                inference_cmd.extend(['--prompt', ""])
 
             try:
                 # 환경변수 적용

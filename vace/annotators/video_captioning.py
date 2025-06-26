@@ -9,7 +9,7 @@ import base64
 import requests
 from PIL import Image
 import torch
-from transformers import BlipProcessor, BlipForConditionalGeneration
+from transformers.models.blip import BlipProcessor, BlipForConditionalGeneration
 import tempfile
 from typing import Optional, Union
 import numpy as np
@@ -50,7 +50,8 @@ class VideoCaptioning:
         """BLIP-2 모델 초기화"""
         try:
             logging.info("Loading BLIP-2 model...")
-            self.processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
+            processor_result = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
+            self.processor = processor_result[0] if isinstance(processor_result, tuple) else processor_result
             self.model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
             
             # GPU 사용 가능하면 이동
@@ -192,7 +193,7 @@ class VideoCaptioning:
             }
             
             payload = {
-                "model": "gpt-4-vision-preview",
+                "model": "gpt-4o",
                 "messages": [
                     {
                         "role": "user",
