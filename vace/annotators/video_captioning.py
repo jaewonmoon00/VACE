@@ -199,7 +199,11 @@ class VideoCaptioning:
                         "content": [
                             {
                                 "type": "text",
-                                "text": "Describe this image in detail for video generation. Focus on the main subject, setting, actions, mood, and visual style. Keep it descriptive but concise (under 100 words)."
+                                "text": "Based on this video frame, imagine what scenes might exist to the left and right. "
+            "Do not focus on describing specific objects or people. Instead, emphasize the overall atmosphere, "
+            "lighting, color palette, and cinematic style of the surrounding environment. "
+            "Describe it like a film director setting the tone for a wide, immersive shot. "
+            "Keep the description under 100 words."
                             },
                             {
                                 "type": "image_url",

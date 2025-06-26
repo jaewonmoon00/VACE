@@ -5,6 +5,7 @@ import os
 import sys
 import time
 import threading
+import random
 from pathlib import Path
 import subprocess
 import torch
@@ -60,6 +61,27 @@ class UnifiedVACEDemo:
         except Exception as e:
             logging.warning(f"Failed to initialize video captioning: {e}")
             self.video_captioner = None
+
+    # 🆕 랜덤 시드 생성 함수들
+    def generate_random_seed(self):
+        """랜덤 시드 생성 (0 ~ 2^32-1 범위)"""
+        return random.randint(0, 2**32 - 1)
+    
+    def randomize_pipeline_seed(self):
+        """파이프라인 탭 시드 랜덤화"""
+        return self.generate_random_seed()
+    
+    def randomize_sequential_seed(self):
+        """순차 확장 탭 시드 랜덤화"""
+        return self.generate_random_seed()
+    
+    def randomize_partial_seed(self):
+        """부분 재생성 탭 시드 랜덤화"""
+        return self.generate_random_seed()
+    
+    def randomize_batch_seed(self):
+        """배치 처리용 시드 랜덤화"""
+        return self.generate_random_seed()
             
     def create_ui(self):
         with gr.Blocks(title="Video Extender") as demo:
@@ -172,7 +194,20 @@ class UnifiedVACEDemo:
                         value="None",
                         label="Prompt Enhancement"
                     )
-                    self.pipeline_seed = gr.Number(value=2025, label="Seed")
+                    # 🆕 시드 설정 - 랜덤 버튼 추가
+                    with gr.Row():
+                        self.pipeline_seed = gr.Number(
+                            value=2025, 
+                            label="Seed",
+                            scale=4
+                        )
+                        self.pipeline_random_seed_btn = gr.Button(
+                            "🎲 Random", 
+                            variant="secondary",
+                            scale=1,
+                            size="sm"
+                        )
+                    
                     self.pipeline_sampling_steps = gr.Slider(
                         minimum=20, maximum=100, value=50, step=5,
                         label="Quality Steps"
@@ -193,6 +228,12 @@ class UnifiedVACEDemo:
                     placeholder="Ready to process..."
                 )
                 self.pipeline_result_video = gr.Video(label="Extended Video")
+        
+        # 🆕 랜덤 시드 버튼 이벤트 추가
+        self.pipeline_random_seed_btn.click(
+            self.randomize_pipeline_seed,
+            outputs=[self.pipeline_seed]
+        )
         
         # 🆕 이벤트 핸들러 설정
         if CAPTIONING_AVAILABLE:
@@ -286,6 +327,21 @@ class UnifiedVACEDemo:
                         value="720p",
                         label="Output Resolution"
                     )
+                    
+                    # 🆕 배치용 시드 설정
+                    with gr.Row():
+                        self.batch_base_seed = gr.Number(
+                            value=2025,
+                            label="Base Seed",
+                            scale=4,
+                            info="Each video will use base_seed + index"
+                        )
+                        self.batch_random_seed_btn = gr.Button(
+                            "🎲 Random", 
+                            variant="secondary",
+                            scale=1,
+                            size="sm"
+                        )
                 
                 with gr.Row():
                     self.batch_start_btn = gr.Button("▶️ Start Batch", variant="primary")
@@ -309,6 +365,12 @@ class UnifiedVACEDemo:
                     value={"total": 0, "completed": 0, "failed": 0, "current": ""}
                 )
         
+        # 🆕 배치 랜덤 시드 버튼 이벤트 추가
+        self.batch_random_seed_btn.click(
+            self.randomize_batch_seed,
+            outputs=[self.batch_base_seed]
+        )
+        
         # 배치 모델 변경 시 해상도 옵션 업데이트
         def update_batch_size_options(model_choice):
             if model_choice == "14B":
@@ -328,7 +390,8 @@ class UnifiedVACEDemo:
             self.start_batch_processing,
             inputs=[
                 self.batch_input_dir, self.batch_prompt_file,
-                self.batch_direction, self.batch_expand_ratio, self.batch_model, self.batch_size
+                self.batch_direction, self.batch_expand_ratio, self.batch_model, self.batch_size,
+                self.batch_base_seed  # 🆕 배치 시드 추가
             ],
             outputs=[self.batch_progress, self.batch_status]
         )
@@ -403,7 +466,20 @@ class UnifiedVACEDemo:
                     
                 # 고급 설정
                 with gr.Accordion("Advanced Settings", open=False):
-                    self.seq_seed = gr.Number(value=2025, label="Seed")
+                    # 🆕 순차 확장용 시드 설정
+                    with gr.Row():
+                        self.seq_seed = gr.Number(
+                            value=2025, 
+                            label="Seed",
+                            scale=4
+                        )
+                        self.seq_random_seed_btn = gr.Button(
+                            "🎲 Random", 
+                            variant="secondary",
+                            scale=1,
+                            size="sm"
+                        )
+                    
                     self.seq_sampling_steps = gr.Slider(
                         minimum=20, maximum=100, value=50, step=5,
                         label="Quality Steps"
@@ -435,6 +511,12 @@ class UnifiedVACEDemo:
                 
                 **Tip**: Use this for creating videos longer than 81 frames (3.4 seconds at 24fps)
                 """)
+
+        # 🆕 순차 확장 랜덤 시드 버튼 이벤트 추가
+        self.seq_random_seed_btn.click(
+            self.randomize_sequential_seed,
+            outputs=[self.seq_seed]
+        )
 
         # 순차 확장용 캡셔닝 이벤트
         if CAPTIONING_AVAILABLE:
@@ -541,7 +623,20 @@ class UnifiedVACEDemo:
                     
                 # 고급 설정
                 with gr.Accordion("Advanced Settings", open=False):
-                    self.partial_seed = gr.Number(value=2025, label="Seed")
+                    # 🆕 부분 재생성용 시드 설정
+                    with gr.Row():
+                        self.partial_seed = gr.Number(
+                            value=2025, 
+                            label="Seed",
+                            scale=4
+                        )
+                        self.partial_random_seed_btn = gr.Button(
+                            "🎲 Random", 
+                            variant="secondary",
+                            scale=1,
+                            size="sm"
+                        )
+                    
                     self.partial_sampling_steps = gr.Slider(
                         minimum=20, maximum=100, value=50, step=5,
                         label="Quality Steps"
@@ -572,6 +667,12 @@ class UnifiedVACEDemo:
                 
                 **Example**: 2.6s × 24fps = 62 guide frames + 19 new frames
                 """)
+
+        # 🆕 부분 재생성 랜덤 시드 버튼 이벤트 추가
+        self.partial_random_seed_btn.click(
+            self.randomize_partial_seed,
+            outputs=[self.partial_seed]
+        )
 
         # 부분 재생성용 캡셔닝 이벤트
         if CAPTIONING_AVAILABLE:
@@ -1072,15 +1173,15 @@ class UnifiedVACEDemo:
         except Exception as e:
             yield f"❌ Error: {str(e)}", None
     
-    def start_batch_processing(self, input_dir, prompt_file, direction, expand_ratio, model_choice, batch_size):
-        """배치 처리 시작"""
+    def start_batch_processing(self, input_dir, prompt_file, direction, expand_ratio, model_choice, batch_size, base_seed):
+        """배치 처리 시작 - 베이스 시드 사용"""
         if self.batch_thread and self.batch_thread.is_alive():
             return "⚠️ Batch processing is already running!", {"status": "running"}
         
         self.batch_stop_flag = False
         self.batch_thread = threading.Thread(
             target=self._batch_worker,
-            args=(input_dir, prompt_file, direction, expand_ratio, model_choice, batch_size)
+            args=(input_dir, prompt_file, direction, expand_ratio, model_choice, batch_size, base_seed)
         )
         self.batch_thread.start()
         
@@ -1091,8 +1192,8 @@ class UnifiedVACEDemo:
         self.batch_stop_flag = True
         return "⏹️ Stopping batch processing..."
     
-    def _batch_worker(self, input_dir, prompt_file, direction, expand_ratio, model_choice, batch_size):
-        """실제 배치 처리 워커"""
+    def _batch_worker(self, input_dir, prompt_file, direction, expand_ratio, model_choice, batch_size, base_seed):
+        """실제 배치 처리 워커 - 베이스 시드 활용"""
         try:
             # GPU 개수 확인
             gpu_count = torch.cuda.device_count() if torch.cuda.is_available() else 1
@@ -1100,6 +1201,12 @@ class UnifiedVACEDemo:
             
             # 모델 선택을 모델명으로 변환
             model_name = self._map_model_name(model_choice)
+            
+            # 베이스 시드 처리
+            try:
+                base_seed = int(base_seed) if base_seed is not None else 2025
+            except:
+                base_seed = 2025
             
             # 해상도 기본값 처리
             if batch_size is None:
@@ -1138,7 +1245,10 @@ class UnifiedVACEDemo:
                 filename = os.path.basename(video_file)
                 prompt = prompts.get(filename, "high quality video")
                 
-                print(f"🎬 Processing {filename} with {model_choice} model")
+                # 🆕 파일별 고유 시드 생성 (베이스 시드 + 인덱스)
+                current_seed = base_seed + completed
+                
+                print(f"🎬 Processing {filename} with {model_choice} model (seed: {current_seed})")
                 
                 # 명령어 구성
                 cmd = [
@@ -1151,7 +1261,7 @@ class UnifiedVACEDemo:
                     '--direction', ','.join(direction) if direction else 'left,right',
                     '--expand_ratio', str(expand_ratio),
                     '--prompt', prompt,
-                    '--base_seed', str(2025 + completed),
+                    '--base_seed', str(current_seed),  # 🆕 고유 시드 사용
                     '--model_name', model_name,
                     '--ckpt_dir', ckpt_dir,
                     '--size', str(batch_size),
@@ -1178,7 +1288,7 @@ class UnifiedVACEDemo:
                     
                     if result.returncode == 0:
                         completed += 1
-                        print(f"✅ Completed {filename} ({completed}/{total_files})")
+                        print(f"✅ Completed {filename} ({completed}/{total_files}) with seed {current_seed}")
                     else:
                         print(f"❌ Error processing {filename}: {result.stderr}")
                     
