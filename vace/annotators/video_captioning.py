@@ -9,7 +9,7 @@ import base64
 import requests
 from PIL import Image
 import torch
-from transformers.models.blip import BlipProcessor, BlipForConditionalGeneration
+from transformers import BlipProcessor, BlipForConditionalGeneration
 import tempfile
 from typing import Optional, Union
 import numpy as np
@@ -50,8 +50,7 @@ class VideoCaptioning:
         """BLIP-2 모델 초기화"""
         try:
             logging.info("Loading BLIP-2 model...")
-            processor_result = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
-            self.processor = processor_result[0] if isinstance(processor_result, tuple) else processor_result
+            self.processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
             self.model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
             
             # GPU 사용 가능하면 이동
@@ -59,7 +58,10 @@ class VideoCaptioning:
                 self.model = self.model.to(self.device)
                 # 메모리 절약을 위해 half precision 사용
                 if torch.cuda.is_available():
-                    self.model = self.model.half()
+                    try:
+                        self.model = self.model.half()
+                    except Exception as e:
+                        logging.warning(f"Failed to use half precision: {e}")
             
             self.model.eval()  # 평가 모드
             logging.info("BLIP-2 model loaded successfully")
@@ -125,7 +127,7 @@ class VideoCaptioning:
             str: 생성된 캡션
         """
         if self.processor is None or self.model is None:
-            return "BLIP-2 model not initialized"
+            return "Error: BLIP-2 model not initialized"
         
         try:
             # 이미지 크기 조정 (메모리 절약)
@@ -138,8 +140,13 @@ class VideoCaptioning:
             # GPU로 이동
             if "cuda" in self.device:
                 inputs = {k: v.to(self.device) for k, v in inputs.items()}
-                if torch.cuda.is_available():
+                # half precision 적용 (모델이 half일 때만)
+                if hasattr(self.model, 'dtype') and self.model.dtype == torch.float16:
                     inputs = {k: v.half() if v.dtype == torch.float32 else v for k, v in inputs.items()}
+            
+            # 캐시 초기화 (메모리 절약)
+            if hasattr(torch.cuda, 'empty_cache'):
+                torch.cuda.empty_cache()
             
             # 캡션 생성
             with torch.no_grad():
@@ -148,7 +155,9 @@ class VideoCaptioning:
                     max_length=50, 
                     num_beams=5,
                     early_stopping=True,
-                    no_repeat_ngram_size=2
+                    no_repeat_ngram_size=2,
+                    do_sample=False,  # 일관된 결과를 위해
+                    temperature=1.0
                 )
             
             # 디코딩
@@ -159,7 +168,7 @@ class VideoCaptioning:
             
         except Exception as e:
             logging.error(f"BLIP-2 captioning failed: {e}")
-            return f"Failed to generate caption: {str(e)}"
+            return f"Error: Failed to generate caption - {str(e)}"
     
     def caption_with_gpt4v(self, image: Image.Image, api_key: str) -> str:
         """
@@ -178,6 +187,10 @@ class VideoCaptioning:
                 # 이미지 크기 조정 (API 비용 절약)
                 if image.size[0] > 1024 or image.size[1] > 1024:
                     image.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
+                
+                # RGB 모드로 변환 (필요시)
+                if image.mode != 'RGB':
+                    image = image.convert('RGB')
                 
                 image.save(tmp_file.name, "JPEG", quality=85)
                 
@@ -201,10 +214,10 @@ class VideoCaptioning:
                             {
                                 "type": "text",
                                 "text": "Based on this video frame, imagine what scenes might exist to the left and right. "
-            "Do not focus on describing specific objects or people. Instead, emphasize the overall atmosphere, "
-            "lighting, color palette, and cinematic style of the surrounding environment. "
-            "Describe it like a film director setting the tone for a wide, immersive shot. "
-            "Keep the description under 100 words."
+                                       "Do not focus on describing specific objects or people. Instead, emphasize the overall atmosphere, "
+                                       "lighting, color palette, and cinematic style of the surrounding environment. "
+                                       "Describe it like a film director setting the tone for a wide, immersive shot. "
+                                       "Keep the description under 100 words."
                             },
                             {
                                 "type": "image_url",
@@ -228,11 +241,20 @@ class VideoCaptioning:
             )
             
             if response.status_code == 200:
-                caption = response.json()["choices"][0]["message"]["content"]
-                logging.info(f"GPT-4V generated caption: {caption}")
-                return caption
+                response_data = response.json()
+                if "choices" in response_data and len(response_data["choices"]) > 0:
+                    caption = response_data["choices"][0]["message"]["content"]
+                    logging.info(f"GPT-4V generated caption: {caption}")
+                    return caption
+                else:
+                    return "GPT-4V API error: No response content"
             else:
-                error_msg = response.json().get("error", {}).get("message", "Unknown error")
+                try:
+                    error_data = response.json()
+                    error_msg = error_data.get("error", {}).get("message", f"HTTP {response.status_code}")
+                except:
+                    error_msg = f"HTTP {response.status_code}: {response.text[:200]}"
+                
                 logging.error(f"GPT-4V API error: {response.status_code} - {error_msg}")
                 return f"GPT-4V API error: {error_msg}"
                 
@@ -290,6 +312,10 @@ class VideoCaptioning:
         # 기본적인 정제
         caption = caption.strip()
         
+        # "there is" 같은 불필요한 표현 제거
+        caption = caption.replace("there is ", "").replace("there are ", "")
+        caption = caption.replace("a picture of ", "").replace("an image of ", "")
+        
         # 첫 글자 대문자화
         if caption and not caption[0].isupper():
             caption = caption[0].upper() + caption[1:]
@@ -302,13 +328,32 @@ class VideoCaptioning:
     
     def get_model_info(self) -> dict:
         """모델 정보 반환"""
+        gpu_memory = 0
+        if torch.cuda.is_available():
+            try:
+                gpu_memory = torch.cuda.get_device_properties(0).total_memory
+            except:
+                gpu_memory = 0
+                
         return {
             "method": self.method,
             "device": self.device,
             "model_loaded": self.model is not None,
             "gpu_available": torch.cuda.is_available(),
-            "gpu_memory": torch.cuda.get_device_properties(0).total_memory if torch.cuda.is_available() else 0
+            "gpu_memory_gb": gpu_memory // (1024**3) if gpu_memory > 0 else 0
         }
+    
+    def cleanup(self):
+        """메모리 정리"""
+        if self.model is not None:
+            del self.model
+        if self.processor is not None:
+            del self.processor
+        
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
+        logging.info("VideoCaptioning cleanup completed")
 
 # 유틸리티 함수들
 def check_requirements():
@@ -360,6 +405,9 @@ def test_captioning(video_path: str, method: str = "blip2"):
         # 모델 정보 출력
         info = captioner.get_model_info()
         print(f"🔧 Model info: {info}")
+        
+        # 정리
+        captioner.cleanup()
         
     except Exception as e:
         print(f"❌ Test failed: {e}")

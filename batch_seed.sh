@@ -4,7 +4,7 @@
 RUN_COUNT=1
 
 # 비디오 경로
-VIDEO_PATH="/data/VACE/inputs/272.mp4"
+VIDEO_PATH="/data/VACE/inputs/videoplayback-Scene-019_chunk1.mp4"
 
 echo "랜덤 시드로 $RUN_COUNT 번 실행 시작"
 echo "처리할 영상: $(basename "$VIDEO_PATH")"
@@ -32,7 +32,7 @@ for i in $(seq 1 $RUN_COUNT); do
         --dit_fsdp \
         --t5_fsdp \
         --ulysses_size 2 \
-        --ring_size 1
+        --ring_size 1 \
     
     # 명령 실행 결과 확인
     if [ $? -eq 0 ]; then
